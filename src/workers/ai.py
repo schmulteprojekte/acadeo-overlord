@@ -1,5 +1,7 @@
 from openai import OpenAI
 
+import random, uuid
+
 
 client = OpenAI()
 
@@ -17,3 +19,7 @@ def call_ai(messages, model, *, use_json=False):
 
     data = dict(reply=reply, input_tokens=input_tokens, output_tokens=output_tokens)
     return data
+
+
+def mock_ai(messages, model, *, use_json=False):
+    return dict(reply=str(uuid.uuid4()), input_tokens=random.randint(10, 20), output_tokens=random.randint(1, 10))
