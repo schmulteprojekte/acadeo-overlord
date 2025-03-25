@@ -10,7 +10,7 @@ router = APIRouter()
 
 @router.post("/ai")
 @sse_endpoint(queue.fetch_job)
-async def ai_request(request: AIRequest):
+async def queue_ai_request(request: AIRequest):
     """Main AI endpoint - returns response as SSE stream"""
     job = queue.enqueue(
         "src.workers.ai.call_ai",
@@ -22,7 +22,7 @@ async def ai_request(request: AIRequest):
 
 @router.post("/mock_ai")
 @sse_endpoint(queue.fetch_job)
-async def mock_ai_request(request: AIRequest):
+async def queue_mock_ai_request(request: AIRequest):
     """Main AI endpoint - returns response as SSE stream"""
     job = queue.enqueue(
         "src.workers.ai.mock_ai",
