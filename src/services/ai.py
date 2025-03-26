@@ -1,11 +1,11 @@
 from openai import OpenAI
 
 
-client = OpenAI()
+openai_client = OpenAI()
 
 
-def call_ai(messages, model, *, use_json=False):
-    response = client.chat.completions.create(
+def call_openai(messages, model, *, use_json=False):
+    response = openai_client.chat.completions.create(
         model=model,
         messages=messages,
         response_format={"type": "json_object"} if use_json else None,
