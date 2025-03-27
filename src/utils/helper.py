@@ -2,7 +2,7 @@ from src.utils.exceptions import ClientError, ServerError
 from pydantic import BaseModel, create_model
 import json, uuid
 
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
 
 def parse_sse(response):
@@ -31,17 +31,8 @@ def check_response_status(response):
         raise ClientError(f"{status_code}: {response_text}")
 
 
-def handle_openai_json(client, json_mode):
-    if isinstance(json_mode, type):
-        method = "parse"
-        client_module = client.beta.chat.completions
-        response_format = json_mode
-    else:
-        method = "create"
-        client_module = client.chat.completions
-        response_format = {"type": "json_object"} if json_mode else None
-
-    return method, client_module, response_format
+def handle_json_schema(schema: type | bool | None) -> type | dict | None:
+    return schema if isinstance(schema, type) else {"type": "json_object"} if schema else None
 
 
 def create_basemodel_from_schema(schema: dict) -> BaseModel:
