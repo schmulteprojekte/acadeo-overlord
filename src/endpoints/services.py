@@ -6,7 +6,7 @@ from src.core import sse
 
 from src.utils.helper import gen_uuid
 
-from src.schemas import AIRequest
+from src.endpoints.schemas import AIRequest
 
 from src.services.ai import call_openai
 
