@@ -1,46 +1,41 @@
-from openai import OpenAI
+import litellm
 from langfuse.decorators import observe, langfuse_context
 
 # from src.core.langfuse import trace
-from src.utils.helper import handle_openai_json
+from src.utils.helper import handle_json_schema
 
 
-openai_client = OpenAI()
+def call_litellm(messages, model, *, temperature, max_tokens, json_schema):
+    "providers: https://docs.litellm.ai/docs/providers"
 
-
-# @trace
-def call_openai(messages, model="gpt-4o-mini", *, temperature=1.0, max_tokens=4096, json_mode=None):
-    method, client_module, response_format = handle_openai_json(openai_client, json_mode)
-
-    response = getattr(client_module, method)(
+    response = litellm.completion(
         model=model,
         messages=messages,
-        response_format=response_format,
         temperature=temperature,
         max_completion_tokens=max_tokens,
+        response_format=handle_json_schema(json_schema),
     )
 
-    reply = response.choices[0].message.content.strip()
-    input_tokens = response.usage.prompt_tokens
-    output_tokens = response.usage.completion_tokens
-
-    data = dict(reply=reply, input_tokens=input_tokens, output_tokens=output_tokens)
-    return data
+    return dict(
+        reply=response.choices[0].message.content.strip(),
+        input_tokens=response.usage.prompt_tokens,
+        output_tokens=response.usage.completion_tokens,
+    )
 
 
 @observe(as_type="generation")
-def call_openai_with_langfuse(prompt, metadata, **placeholders):
+def call_litellm_with_langfuse(prompt, metadata, **placeholders):
     langfuse_context.update_current_observation(
         prompt=prompt,
         metadata=metadata,
     )
 
-    response = call_openai(
+    response = call_litellm(
         messages=prompt.compile(**placeholders),
         model=prompt.config.get("model"),
         temperature=prompt.config.get("temperature"),
         max_tokens=prompt.config.get("max_tokens"),
-        json_mode=True if prompt.config.get("json_schema") else None,
+        json_schema=True if prompt.config.get("json_schema") else None,
     )
 
     langfuse_context.update_current_observation(
