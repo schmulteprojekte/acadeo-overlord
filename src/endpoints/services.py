@@ -8,18 +8,18 @@ from src.utils.helper import gen_uuid
 
 from src.endpoints.schemas import AIRequest
 
-from src.services.ai import call_openai
+from src.services.ai import call_litellm
 
 
 router = APIRouter()
 
 
-@router.post("/call_openai")
+@router.post("/call_ai")
 @sse.endpoint
 async def endpoint_call_openai(request: AIRequest):
     # avoid blocking via threadpool
     response = await run_in_threadpool(
-        call_openai,
+        call_litellm,
         request.messages,
         request.model,
     )
