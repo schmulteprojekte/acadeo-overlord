@@ -1,8 +1,10 @@
 from src.utils.exceptions import ClientError, ServerError
+
 from pydantic import BaseModel, create_model
 import json, uuid
 
-from typing import Any, Optional, Literal
+from typing import Any, Optional
+from langfuse.model import Prompt
 
 
 def parse_sse(response):
@@ -35,7 +37,15 @@ def handle_json_schema(schema: type | bool | None) -> type | dict | None:
     return schema if isinstance(schema, type) else {"type": "json_object"} if schema else None
 
 
+def handle_messages(prompt: Prompt, **placeholders):
+    compiled_prompt = prompt.compile(**placeholders)
+    messages = compiled_prompt if isinstance(prompt.prompt, list) else [{"role": "user", "content": compiled_prompt}]
+    return messages
+
+
 def create_basemodel_from_schema(schema: dict) -> BaseModel:
+    "Requires serious contemplation and testing if it should be used with langfuse."
+
     # Map JSON Schema types to Python (Pydantic) types
     json_type_map = {
         "string": str,
