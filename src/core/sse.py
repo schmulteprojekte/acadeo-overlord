@@ -6,10 +6,8 @@ import json
 def endpoint(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        # get result from original function
         result = await func(*args, **kwargs)
 
-        # generate events
         async def event_generator():
             if result is None:
                 yield {"event": "error", "data": "result is None"}
