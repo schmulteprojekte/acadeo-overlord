@@ -2,28 +2,15 @@ import litellm
 from langfuse.decorators import observe, langfuse_context
 
 # from src.core.langfuse import trace
-from src.utils.helper import handle_json_schema, handle_messages
+from src.utils.helper import handle_messages
 
 from langfuse.model import Prompt
 
 
-def call_litellm(
-    messages: list[dict],
-    model: str = "gpt-4o-mini",
-    *,
-    temperature: float = None,
-    max_tokens: int = None,
-    json_schema: type | bool = None,
-) -> dict[str, str | int]:
+def call_litellm(**params) -> dict[str, str | int]:
     "providers: https://docs.litellm.ai/docs/providers"
 
-    response = litellm.completion(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_completion_tokens=max_tokens,
-        response_format=handle_json_schema(json_schema),
-    )
+    response = litellm.completion(**params)
 
     return dict(
         reply=response.choices[0].message.content.strip(),
