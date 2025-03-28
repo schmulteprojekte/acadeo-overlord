@@ -1,2 +1,6 @@
-class NotCompleted(Exception):
+class ClientError(Exception):
+    pass
+
+
+class ServerError(Exception):
     pass
