@@ -1,12 +1,18 @@
 from pydantic import BaseModel
 
 
+class LangfuseRequest(BaseModel):
+    prompt: dict
+    placeholders: dict | None = None
+    metadata: dict | None = None
+
+
 class OpenAIRequest(BaseModel):
     messages: list
     model: str = "gpt-4o-mini"
     temperature: float | None = 0.7
     max_tokens: int | None = 4096
-    json_schema: type | bool | None = None
+    response_format: type | bool | None = None
 
 
 class GeminiRequest(BaseModel):
@@ -34,8 +40,8 @@ class GeminiRequest(BaseModel):
             "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
             "threshold": "BLOCK_NONE",
         },
-        # {
-        #     "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
-        #     "threshold": "BLOCK_NONE",
-        # },
+        {
+            "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+            "threshold": "BLOCK_NONE",
+        },
     ]
