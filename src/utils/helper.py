@@ -33,11 +33,19 @@ def check_response_status(response):
         raise ClientError(f"{status_code}: {response_text}")
 
 
-def handle_json_schema(schema: type | bool | None) -> type | dict | None:
-    return schema if isinstance(schema, type) else {"type": "json_object"} if schema else None
+def handle_response_format(prompt, placeholders):
+    json_schema = prompt.config.get("response_format")
+
+    if isinstance(json_schema, type):
+        # structured response
+        return json_schema
+    elif json_schema:
+        # json mode
+        placeholders["json_schema"] = json_schema
+        return {"type": "json_object"}
 
 
-def handle_messages(prompt: Prompt, **placeholders):
+def handle_messages(prompt: Prompt, placeholders: dict = None):
     compiled_prompt = prompt.compile(**placeholders)
     messages = compiled_prompt if isinstance(prompt.prompt, list) else [{"role": "user", "content": compiled_prompt}]
     return messages
