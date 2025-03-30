@@ -1,13 +1,9 @@
-from src.core.dependencies import sse
+from src.core import sse, langfuse, litellm
 
 from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 
 from src.utils.helper import gen_uuid
-
-from src.endpoints.schemas import LangfuseRequest, GeminiRequest
-
-from src.services.ai import call_litellm
 
 
 router = APIRouter()
@@ -15,9 +11,9 @@ router = APIRouter()
 
 @router.post("/langfuse_litellm")
 @sse.endpoint
-async def _call_litellm(request: LangfuseRequest):
+async def _call_litellm(request: langfuse.Request):
     return await run_in_threadpool(
-        call_litellm,
+        litellm.call,
         langfuse_prompt_params=request.langfuse_prompt_params,
         prompt_placeholders=request.prompt_placeholders,
         metadata=request.metadata,
