@@ -1,9 +1,9 @@
-from src.core.dependencies import Management
+from src.core.dependencies import langfuse
 
 import litellm
 
 
-@Management.prompt_manager.track
+@langfuse.track
 def call_litellm(**params) -> dict[str, str | int]:
     "providers: https://docs.litellm.ai/docs/providers"
 
