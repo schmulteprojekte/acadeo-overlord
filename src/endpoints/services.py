@@ -1,7 +1,7 @@
+from src.core.dependencies import sse
+
 from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
-
-from src.core import sse
 
 from src.utils.helper import gen_uuid
 
@@ -13,16 +13,15 @@ from src.services.ai import call_litellm
 router = APIRouter()
 
 
-@router.post("/call_openai")
+@router.post("/call_litellm")
 @sse.endpoint
-async def _call_openai(request: LangfuseRequest):
-    response = await run_in_threadpool(
+async def _call_litellm(request: LangfuseRequest):
+    return await run_in_threadpool(
         call_litellm,
         prompt=request.prompt,
         placeholders=request.placeholders,
         metadata=request.metadata,
     )
-    return response
 
 
 # @router.post("/call_gemini")
