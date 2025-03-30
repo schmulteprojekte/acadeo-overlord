@@ -1,8 +1,7 @@
-from src.core import sse, langfuse, litellm
-
 from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 
+from src.core import sse, langfuse, litellm
 from src.utils.helper import gen_uuid
 
 
@@ -11,12 +10,12 @@ router = APIRouter()
 
 @router.post("/langfuse_litellm")
 @sse.endpoint
-async def _call_litellm(request: langfuse.Request):
+async def _(request: langfuse.Request):
     return await run_in_threadpool(
         litellm.call,
-        prompt_params=request.prompt_params,
-        prompt_placeholders=request.prompt_placeholders,
-        metadata=request.metadata,
+        request.prompt_params,
+        request.prompt_placeholders,
+        request.metadata,
     )
 
 
@@ -37,6 +36,5 @@ async def _call_litellm(request: langfuse.Request):
 
 @router.post("/gen_uuid")
 @sse.endpoint
-async def _gen_uuid():
-    response = await run_in_threadpool(gen_uuid)
-    return response
+async def _():
+    return await run_in_threadpool(gen_uuid)
