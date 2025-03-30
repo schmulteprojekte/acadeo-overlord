@@ -1,5 +1,7 @@
-from src.core import langfuse
+import config
+from src.core import sse, langfuse
 
 
-class Management:
-    prompt_manager = langfuse.PromptManager()
+config = config
+sse = sse.Manager
+langfuse = langfuse.Manager
