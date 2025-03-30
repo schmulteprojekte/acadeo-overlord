@@ -2,8 +2,8 @@ from pydantic import BaseModel
 
 
 class LangfuseRequest(BaseModel):
-    prompt: dict
-    placeholders: dict | None = None
+    langfuse_prompt_params: dict
+    prompt_placeholders: dict | None = None
     metadata: dict | None = None
 
 

@@ -18,8 +18,8 @@ router = APIRouter()
 async def _call_litellm(request: LangfuseRequest):
     return await run_in_threadpool(
         call_litellm,
-        prompt=request.prompt,
-        placeholders=request.placeholders,
+        langfuse_prompt_params=request.langfuse_prompt_params,
+        prompt_placeholders=request.prompt_placeholders,
         metadata=request.metadata,
     )
 
