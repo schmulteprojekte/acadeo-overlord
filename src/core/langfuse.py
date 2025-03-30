@@ -7,14 +7,14 @@ lf = Langfuse()
 
 
 class Request(BaseModel):
-    langfuse_prompt_params: dict
+    prompt_params: dict
     prompt_placeholders: dict | None = None
     metadata: dict | None = None
 
 
 def track(func):
-    def wrapper(langfuse_prompt_params: dict, prompt_placeholders: dict = None, metadata: dict = None):
-        prompt = lf.get_prompt(**langfuse_prompt_params)
+    def wrapper(prompt_params: dict, prompt_placeholders: dict = None, metadata: dict = None):
+        prompt = lf.get_prompt(**prompt_params)
 
         # --- TODO: refactor to pydantic model (attach to endpoint schemas)
 
