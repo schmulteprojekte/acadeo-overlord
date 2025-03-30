@@ -3,7 +3,8 @@ import config as _
 from fastapi import FastAPI, Response
 from fastapi.concurrency import run_in_threadpool
 
-from src.core import sse, langfuse, litellm
+from src.core import sse
+from src.services import langfuse, litellm
 from src.utils.helper import gen_uuid
 
 
