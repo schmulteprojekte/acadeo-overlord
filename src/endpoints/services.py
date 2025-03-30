@@ -12,7 +12,7 @@ router = APIRouter()
 @sse.endpoint
 async def _(request: langfuse.Request):
     return await run_in_threadpool(
-        litellm.call,
+        langfuse.track(litellm.call),
         request.prompt_params,
         request.prompt_placeholders,
         request.metadata,
