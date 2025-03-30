@@ -1,12 +1,6 @@
 from pydantic import BaseModel
 
 
-class LangfuseRequest(BaseModel):
-    langfuse_prompt_params: dict
-    prompt_placeholders: dict | None = None
-    metadata: dict | None = None
-
-
 class OpenAIRequest(BaseModel):
     messages: list
     model: str = "gpt-4o-mini"

@@ -6,6 +6,12 @@ from src.utils.helper import handle_messages, handle_response_format
 lf = Langfuse()
 
 
+class Request(BaseModel):
+    langfuse_prompt_params: dict
+    prompt_placeholders: dict | None = None
+    metadata: dict | None = None
+
+
 def track(func):
     def wrapper(langfuse_prompt_params: dict, prompt_placeholders: dict = None, metadata: dict = None):
         prompt = lf.get_prompt(**langfuse_prompt_params)
