@@ -13,7 +13,7 @@ from src.services.ai import call_litellm
 router = APIRouter()
 
 
-@router.post("/call_litellm")
+@router.post("/langfuse_litellm")
 @sse.endpoint
 async def _call_litellm(request: LangfuseRequest):
     return await run_in_threadpool(
