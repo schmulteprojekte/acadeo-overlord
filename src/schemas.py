@@ -1,6 +1,17 @@
 from pydantic import BaseModel
 
 
+class Text(BaseModel):
+    text: str
+    sentiment: float
+
+
+class PdfContent(BaseModel):
+    title: str
+    topic: str
+    pages: int
+
+
 class OpenAIRequest(BaseModel):
     messages: list
     model: str = "gpt-4o-mini"
