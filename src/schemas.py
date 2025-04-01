@@ -1,15 +1,7 @@
 from pydantic import BaseModel
 
 
-class Text(BaseModel):
-    text: str
-    sentiment: float
-
-
-class PdfContent(BaseModel):
-    title: str
-    topic: str
-    pages: int
+# REQUESTS
 
 
 class OpenAIRequest(BaseModel):
