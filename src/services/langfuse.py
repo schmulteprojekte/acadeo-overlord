@@ -22,8 +22,10 @@ def loads_or_default(json_string):
 
 def handle_response_format(json_schema):
     if json_schema:
+
         if isinstance(json_schema, dict):
             return jsonschema_to_pydantic(json_schema)
+
         elif isinstance(json_schema, str):
             # return {"type", "json_object"}
             raise Exception("Json mode is not supported! Please use structured responses.")
@@ -34,13 +36,11 @@ def handle_messages(prompt: PromptClient, placeholders: dict = None):
 
     if isinstance(compiled_prompt, str):
         # turn single user prompt to message
-        messages = [{"role": "user", "content": compiled_prompt}]
+        return [{"role": "user", "content": compiled_prompt}]
 
     elif isinstance(compiled_prompt, list):
         # load serialized string if multi-modal requests
         return [{**message, "content": loads_or_default(message.get("content"))} for message in compiled_prompt]
-
-    return messages
 
 
 # MAIN
