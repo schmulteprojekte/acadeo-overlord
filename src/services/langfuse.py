@@ -4,12 +4,20 @@ from langfuse.model import PromptClient
 from pydantic import BaseModel
 
 from jsonschema_pydantic import jsonschema_to_pydantic
+import json
 
 
 lf = Langfuse()
 
 
 # HELPER
+
+
+def loads_or_default(json_string):
+    try:
+        return json.loads(json_string)
+    except json.JSONDecodeError:
+        return json_string
 
 
 def handle_response_format(json_schema):
@@ -23,7 +31,15 @@ def handle_response_format(json_schema):
 
 def handle_messages(prompt: PromptClient, placeholders: dict = None):
     compiled_prompt = prompt.compile(**placeholders)
-    messages = compiled_prompt if isinstance(prompt.prompt, list) else [{"role": "user", "content": compiled_prompt}]
+
+    if isinstance(compiled_prompt, str):
+        # turn single user prompt to message
+        messages = [{"role": "user", "content": compiled_prompt}]
+
+    elif isinstance(compiled_prompt, list):
+        # load serialized string if multi-modal requests
+        return [{**message, "content": loads_or_default(message.get("content"))} for message in compiled_prompt]
+
     return messages
 
 
