@@ -11,5 +11,5 @@ app.include_router(test.router)
 
 
 @app.get("/")
-def _():
+def health_check():
     return Response("Overlord is awake!")
