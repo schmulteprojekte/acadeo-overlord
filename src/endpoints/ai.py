@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Security
+from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 
 from src.auth import api_key
@@ -9,7 +9,7 @@ from src.services import langfuse, litellm
 langfuse_router = APIRouter(prefix="/langfuse")
 
 
-@langfuse_router.post("/litellm", dependencies=[Security(api_key.validate)])
+@langfuse_router.post("/litellm", dependencies=[api_key.authentication])
 @sse.endpoint
 async def langfuse_litellm(request: langfuse.PromptConfig):
     func, args = langfuse.track(litellm.call), request

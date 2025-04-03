@@ -16,3 +16,6 @@ def validate(api_key_header: str = Security(api_key_header)):
         detail="Invalid API Key",
         headers={"WWW-Authenticate": "APIKey"},
     )
+
+
+authentication = Security(validate)
