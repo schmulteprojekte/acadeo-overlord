@@ -13,7 +13,9 @@ lf = Langfuse()
 # HELPER
 
 
-def deserialize_if_json(malformed_json):
+def deserialize_if_json(malformed_json: str) -> dict | list | str:
+    # allows storing readable string in langfuse ui
+
     try:
         return json5.loads(malformed_json)
     except:
