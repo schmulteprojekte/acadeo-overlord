@@ -1,6 +1,9 @@
-import config as _
+import config as _  # init
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, Security
+
+from src.auth import api_key
+
 from src.endpoints import ai, test
 
 
@@ -10,6 +13,6 @@ app.include_router(ai.langfuse_router)
 app.include_router(test.router)
 
 
-@app.get("/")
+@app.get("/", dependencies=[Security(api_key.validate)])
 def health_check():
     return Response("Overlord is awake!")
