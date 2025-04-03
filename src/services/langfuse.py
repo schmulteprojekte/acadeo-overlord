@@ -4,7 +4,7 @@ from langfuse.model import PromptClient
 from pydantic import BaseModel
 
 from jsonschema_pydantic import jsonschema_to_pydantic
-import json
+import json5
 
 
 lf = Langfuse()
@@ -13,11 +13,11 @@ lf = Langfuse()
 # HELPER
 
 
-def loads_or_default(json_string):
+def deserialize_if_json(malformed_json):
     try:
-        return json.loads(json_string)
-    except json.JSONDecodeError:
-        return json_string
+        return json5.loads(malformed_json)
+    except:
+        return malformed_json
 
 
 def handle_response_format(json_schema):
@@ -28,7 +28,7 @@ def handle_response_format(json_schema):
 
         elif isinstance(json_schema, str):
             # return {"type", "json_object"}
-            raise Exception("Json mode is not supported! Please use structured responses.")
+            raise Exception("Json mode is not supported! Please use structured responses instead.")
 
 
 def handle_messages(prompt: PromptClient, placeholders: dict = None):
@@ -40,7 +40,7 @@ def handle_messages(prompt: PromptClient, placeholders: dict = None):
 
     elif isinstance(compiled_prompt, list):
         # load serialized string if multi-modal requests
-        return [{**message, "content": loads_or_default(message.get("content"))} for message in compiled_prompt]
+        return [{**message, "content": deserialize_if_json(message.get("content"))} for message in compiled_prompt]
 
 
 # MAIN
