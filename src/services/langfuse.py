@@ -1,10 +1,9 @@
 from langfuse import Langfuse
-
 from langfuse.model import PromptClient
-from pydantic import BaseModel
 
+from pydantic import BaseModel
 from jsonschema_pydantic import jsonschema_to_pydantic
-import json5
+import json
 
 
 lf = Langfuse()
@@ -13,13 +12,11 @@ lf = Langfuse()
 # HELPER
 
 
-def deserialize_if_json(malformed_json: str) -> dict | list | str:
-    # allows storing readable string in langfuse ui
-
+def deserialize_if_json(json_schema: str) -> dict | list | str:
     try:
-        return json5.loads(malformed_json)
+        return json.loads(json_schema)
     except:
-        return malformed_json
+        return json_schema
 
 
 def handle_response_format(json_schema):
