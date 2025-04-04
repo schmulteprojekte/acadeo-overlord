@@ -4,3 +4,4 @@ sse_starlette==2.2.1
 requests==2.32.3
 langfuse==2.60.2
 litellm==1.64.1
+jsonschema-pydantic==0.6
