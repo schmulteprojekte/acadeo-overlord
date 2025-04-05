@@ -8,41 +8,78 @@
 
 ```python
 import requests, json
-from typing import Literal
-
-
-def parse_sse(response):
-    for line in response.iter_lines():
-        if line.startswith(b"data:"):
-            data_line = line.split(b":", 1)[1].strip()
-            try:
-                yield json.loads(data_line)
-            except json.JSONDecodeError:
-                continue
+from typing import Literal, Generator
 
 
 class Overlord:
-    server: str
+    """Server client for the Overlord API.
+
+    ### Usage:
+
+    ```python
+    # init
+    Overlord.server = "http://your-server-url"
+    Overlord.auth("your-api-key")
+
+    # check health
+    response = Overlord.ping()
+
+    # request single event
+    response = next(Overlord.request("endpoint", "POST", data={}))
+    ```
+    """
+
+    server: str = None
     _session = requests.Session()
 
     @classmethod
+    def _construct_url(cls, endpoint: str = None):
+        return f"{cls.server.rstrip('/')}/{(endpoint or '').lstrip('/')}"
+
+    @staticmethod
+    def _parse_sse(response) -> Generator:
+        for line in response.iter_lines():
+            if line.startswith(b"data:"):
+                data_line = line.split(b":", 1)[1].strip()
+                try:
+                    yield json.loads(data_line)
+                except json.JSONDecodeError:
+                    continue
+
+    @classmethod
     def auth(cls, api_key: str):
+        if not cls.server:
+            raise ValueError("No server url specified!")
         cls._session.headers.update({"x-api-key": api_key})
 
     @classmethod
-    def request(cls, endpoint: str, method: Literal["GET", "POST"] = "GET", data: dict = None):
+    def ping(cls):
+        response = cls._session.request("GET", cls._construct_url())
+        response.raise_for_status()
+        return response
+
+    @classmethod
+    def request(
+        cls,
+        endpoint: str = None,
+        method: Literal["GET", "POST"] = "GET",
+        data: dict = None,
+    ) -> Generator:
+
         with cls._session.request(
             method,
-            f"{cls.server.rstrip('/')}/{endpoint.lstrip('/')}",
+            cls._construct_url(endpoint),
             json=data,
             stream=True,
         ) as response:
             response.raise_for_status()
-            yield from parse_sse(response)
+            yield from cls._parse_sse(response)
 
 
 Overlord.server = server_url
 Overlord.auth(access_key)
+
+Overlord.ping()
 
 response = next(Overlord.request("langfuse/litellm", "POST", prompt_config.model_dump()))
 response
