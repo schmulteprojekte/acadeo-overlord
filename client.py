@@ -1,4 +1,4 @@
-import requests, json
+import requests, json, contextlib
 from typing import Literal, Generator
 
 
@@ -38,6 +38,13 @@ class Overlord:
                 except json.JSONDecodeError:
                     continue
 
+    @staticmethod
+    def _present(response):
+        if isinstance(response, str):
+            with contextlib.suppress(json.JSONDecodeError):
+                response = json.loads(response)
+        return response
+
     @classmethod
     def auth(cls, api_key: str):
         if not cls.server:
@@ -65,4 +72,4 @@ class Overlord:
             stream=True,
         ) as response:
             response.raise_for_status()
-            yield from cls._parse_sse(response)
+            yield from map(cls._present, cls._parse_sse(response))

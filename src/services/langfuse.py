@@ -74,12 +74,12 @@ class PromptConfig(BaseModel):
 
 
 def track(func):
-    def wrapper(prompt_config: PromptConfig):
-        # get or init client
+    async def wrapper(prompt_config: PromptConfig):
+        # get or init client and get prompt object
         lf = ClientManager.get_client(prompt_config.args.pop("project"))
-
-        # get object and extract prompt placeholders and litellm params
         prompt = lf.get_prompt(**prompt_config.args)
+
+        # extract prompt placeholders and litellm params
         placeholders = prompt_config.placeholders or {}
         params = prompt.config.copy()
 
@@ -102,6 +102,6 @@ def track(func):
         if prompt_config.metadata:
             params["metadata"]["custom"] = prompt_config.metadata
 
-        return func(**params)
+        return await func(**params)
 
     return wrapper
