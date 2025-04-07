@@ -1,52 +1,68 @@
-from pydantic import BaseModel
-import json
+import requests, json
+from typing import Literal, Generator
 
 
-# EXCEPTIONS
+class Overlord:
+    """
+    Server client for the Overlord API.
 
+    ### Usage:
 
-class ClientError(Exception):
-    pass
+    ```python
+    # init
+    Overlord.server = "http://your-server-url"
+    Overlord.auth("your-api-key")
 
+    # check health
+    response = Overlord.ping()
 
-class ServerError(Exception):
-    pass
+    # request single event
+    response = next(Overlord.request("endpoint", "POST", data={}))
+    ```
+    """
 
+    server: str = None
+    _session = requests.Session()
 
-# SCHEMAS
+    @classmethod
+    def _construct_url(cls, endpoint: str = None):
+        return f"{cls.server.rstrip('/')}/{(endpoint or '').lstrip('/')}"
 
+    @staticmethod
+    def _parse_sse(response) -> Generator:
+        for line in response.iter_lines():
+            if line.startswith(b"data:"):
+                data_line = line.split(b":", 1)[1].strip()
+                try:
+                    yield json.loads(data_line)
+                except json.JSONDecodeError:
+                    continue
 
-class Text(BaseModel):
-    text: str
-    sentiment: float
+    @classmethod
+    def auth(cls, api_key: str):
+        if not cls.server:
+            raise ValueError("No server url specified!")
+        cls._session.headers.update({"x-api-key": api_key})
 
+    @classmethod
+    def ping(cls):
+        response = cls._session.request("GET", cls._construct_url())
+        response.raise_for_status()
+        return response
 
-class PdfContent(BaseModel):
-    title: str
-    topic: str
-    pages: int
+    @classmethod
+    def request(
+        cls,
+        endpoint: str = None,
+        method: Literal["GET", "POST"] = "GET",
+        data: dict = None,
+    ) -> Generator:
 
-
-# HELPER
-
-
-def parse_sse(response):
-    events = []
-
-    for line in response.iter_lines():
-        if line and line.decode("utf-8").startswith("data"):
-            data_line_clean = line[5:].strip()
-            event_data = json.loads(data_line_clean)
-            events.append(event_data)
-
-    return events
-
-
-def check_response_status(response):
-    status_code = response.status_code
-    response_text = response.text
-
-    if status_code >= 500:
-        raise ServerError(f"{status_code}: {response_text}")
-    elif status_code >= 400:
-        raise ClientError(f"{status_code}: {response_text}")
+        with cls._session.request(
+            method,
+            cls._construct_url(endpoint),
+            json=data,
+            stream=True,
+        ) as response:
+            response.raise_for_status()
+            yield from cls._parse_sse(response)

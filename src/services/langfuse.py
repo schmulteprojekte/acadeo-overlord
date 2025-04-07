@@ -4,8 +4,25 @@ from langfuse.model import PromptClient
 from pydantic import BaseModel
 from jsonschema_pydantic import jsonschema_to_pydantic
 
+import os
 
-lf = Langfuse()
+
+class ClientManager:
+    clients = {}
+
+    @classmethod
+    def _init_client(cls, project: str):
+        # set standardized keys as litellm creates client internally overriding params
+        os.environ["LANGFUSE_PUBLIC_KEY"] = os.getenv(f"LANGFUSE_PUBLIC_KEY_{project.upper()}")
+        os.environ["LANGFUSE_SECRET_KEY"] = os.getenv(f"LANGFUSE_SECRET_KEY_{project.upper()}")
+        cls.clients[project] = Langfuse()
+
+    @classmethod
+    def get_client(cls, project: str):
+        if project not in cls.clients:
+            cls._init_client(project)
+
+        return cls.clients[project]
 
 
 # HELPER
@@ -31,7 +48,7 @@ def _handle_multimodal_messages(prompt, urls):
     return prompt
 
 
-def handle_messages(prompt: PromptClient, placeholders: dict = {}):
+def handle_messages(prompt: PromptClient, placeholders: dict):
     # pop urls from params to send as multi-modal messages
     file_urls = placeholders.pop("file_urls", None)
 
@@ -58,26 +75,33 @@ class PromptConfig(BaseModel):
 
 def track(func):
     def wrapper(prompt_config: PromptConfig):
-        # get prompt from config and extract placeholders and params
-        langfuse_prompt = lf.get_prompt(**prompt_config.args)
-        func_params = langfuse_prompt.config.copy()
+        # get or init client
+        lf = ClientManager.get_client(prompt_config.args.pop("project"))
+
+        # get object and extract prompt placeholders and litellm params
+        prompt = lf.get_prompt(**prompt_config.args)
         placeholders = prompt_config.placeholders or {}
+        params = prompt.config.copy()
 
-        # pop schema from params and turn into model
-        json_schema = func_params.pop("json_schema", None)
+        # pop json schema from params and turn into model
+        schema = params.pop("json_schema", None)
 
-        # construct params from prompt
-        func_params["messages"] = handle_messages(langfuse_prompt, placeholders)
+        # enable prompt management via litellm metadata
+        params["metadata"] = {"prompt": prompt}
 
-        if json_schema:
-            func_params["response_format"] = handle_response_format(json_schema)
+        # ---
 
-        # enable prompt management
-        func_params["metadata"] = {"prompt": langfuse_prompt}
+        # build litellm standard prompt
+        params["messages"] = handle_messages(prompt, placeholders)
+
+        # send json schema as structured response format
+        if schema:
+            params["response_format"] = handle_response_format(schema)
+
         # add custom metadata to generic from prompt
         if prompt_config.metadata:
-            func_params["metadata"]["custom"] = prompt_config.metadata
+            params["metadata"]["custom"] = prompt_config.metadata
 
-        return func(**func_params)
+        return func(**params)
 
     return wrapper
