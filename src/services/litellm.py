@@ -6,9 +6,10 @@ import litellm
 # async version: https://docs.litellm.ai/docs/completion/stream
 
 
-def call(**params) -> dict[str, str | int]:
+async def call(**params) -> dict[str, str | int]:
     "providers: https://docs.litellm.ai/docs/providers"
 
-    response = litellm.completion(**params)
+    response = await litellm.acompletion(**params)
+
     reply = response.choices[0].message.content.strip()
     return reply
