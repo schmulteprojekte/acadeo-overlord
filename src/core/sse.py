@@ -5,7 +5,7 @@ import json
 
 
 async def create_event(event_type: str, event_data) -> AsyncGenerator:
-    yield {"create_event": event_type, "data": json.dumps(event_data)}
+    yield {"event": event_type, "data": json.dumps(event_data)}
 
 
 def endpoint(func):
