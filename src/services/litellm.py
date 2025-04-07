@@ -1,6 +1,11 @@
 import litellm
 
 
+# native langfuse integration: https://docs.litellm.ai/docs/proxy/prompt_management
+
+# async version: https://docs.litellm.ai/docs/completion/stream
+
+
 def call(**params) -> dict[str, str | int]:
     "providers: https://docs.litellm.ai/docs/providers"
 
