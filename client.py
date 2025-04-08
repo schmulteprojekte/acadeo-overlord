@@ -35,7 +35,7 @@ class PromptManager:
             commit_message=commit_msg,
         )
 
-    def get_prompt(self, name, label, version=None, *, placeholders=None, metadata):
+    def get_prompt(self, name, label, version=None, *, placeholders=None, metadata=None):
         args = dict(
             name=name,
             label=label,
