@@ -15,7 +15,7 @@ def endpoint(func):
             event_type, event_data = "success", await func(*args, **kwargs)
 
             if not event_data:
-                raise ValueError("event_data is None")
+                raise ValueError("No event data received")
 
         except Exception as e:
             event_type, event_data = "error", e.__dict__
