@@ -1,5 +1,56 @@
-import requests, json, contextlib
+import requests, json, contextlib, os
 from typing import Literal, Generator
+
+from langfuse import Langfuse
+
+
+class PromptManager:
+    def __init__(self, project: str):
+        self.project = project
+        self._lf = self._setup_client(project)
+
+    @staticmethod
+    def _setup_client(project):
+        os.environ["LANGFUSE_PUBLIC_KEY"] = os.getenv(f"LANGFUSE_PUBLIC_KEY_{project.upper()}")
+        os.environ["LANGFUSE_SECRET_KEY"] = os.getenv(f"LANGFUSE_SECRET_KEY_{project.upper()}")
+        return Langfuse()
+
+    def create_prompt(
+        self,
+        name,
+        messages,
+        *,
+        labels: list[str] = None,
+        tags: list[str] = None,
+        commit_msg: str = None,
+        config: dict = None,
+    ):
+        return self._lf.create_prompt(
+            name=name,
+            prompt=messages,
+            labels=labels,
+            tags=tags,
+            type="chat",
+            config=config,
+            commit_message=commit_msg,
+        )
+
+    def get_prompt(self, name, label, version=None, *, placeholders=None, metadata):
+        args = dict(
+            name=name,
+            label=label,
+            version=version,
+            project=self.project,
+        )
+
+        prompt_config = dict(args=args)
+
+        if placeholders:
+            prompt_config["placeholders"] = placeholders
+        if metadata:
+            prompt_config["metadata"] = metadata
+
+        return prompt_config
 
 
 class Overlord:
