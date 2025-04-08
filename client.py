@@ -28,7 +28,7 @@ class PromptManager:
         return self._lf.create_prompt(
             name=name,
             prompt=messages,
-            labels=labels,
+            labels=labels or [],
             tags=tags,
             type="chat",
             config=config,
