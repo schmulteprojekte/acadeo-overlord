@@ -12,6 +12,6 @@ app.include_router(ai.langfuse_router)
 app.include_router(test.router)
 
 
-@app.get("/", dependencies=[api_key.authentication])
+@app.get("/", dependencies=[api_key.auth])
 def health_check():
     return Response("Overlord is awake!")

@@ -9,7 +9,7 @@ from src.services import langfuse, litellm
 langfuse_router = APIRouter(prefix="/langfuse")
 
 
-@langfuse_router.post("/litellm", dependencies=[api_key.authentication])
+@langfuse_router.post("/litellm", dependencies=[api_key.auth])
 @sse.endpoint
 async def langfuse_litellm(request: langfuse.PromptConfig):
     func, args = langfuse.track(litellm.call), request

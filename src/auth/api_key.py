@@ -18,4 +18,4 @@ def validate(api_key_header: str = Security(api_key_header)):
     )
 
 
-authentication = Security(validate)
+auth = Security(validate)
