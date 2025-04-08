@@ -24,22 +24,22 @@ class ClientManager:
     clients = {}
 
     @classmethod
-    async def _init_client(cls, project: str):
+    def _init_client(cls, project: str):
         # set standardized keys as litellm creates client internally overriding params
         os.environ["LANGFUSE_PUBLIC_KEY"] = os.getenv(f"LANGFUSE_PUBLIC_KEY_{project.upper()}")
         os.environ["LANGFUSE_SECRET_KEY"] = os.getenv(f"LANGFUSE_SECRET_KEY_{project.upper()}")
-        cls.clients[project] = await run_in_threadpool(Langfuse)
+        cls.clients[project] = Langfuse()
 
     @classmethod
-    async def get_client(cls, project: str):
+    def get_client(cls, project: str):
         if project not in cls.clients:
-            await cls._init_client(project)
+            cls._init_client(project)
 
         return cls.clients[project]
 
 
 async def fetch_prompt(prompt_config: PromptConfig):
-    lf = await ClientManager.get_client(prompt_config.args.pop("project"))
+    lf = ClientManager.get_client(prompt_config.args.pop("project"))
     return await run_in_threadpool(lf.get_prompt, **prompt_config.args)
 
 
