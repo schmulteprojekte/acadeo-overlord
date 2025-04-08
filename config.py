@@ -9,3 +9,5 @@ access_keys = json.loads(os.getenv("ACCESS_KEYS"))
 
 litellm.success_callback = ["langfuse"]
 litellm.failure_callback = ["langfuse"]
+
+rates = ["3/second", "60/minute", "3000/day"]

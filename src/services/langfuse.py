@@ -4,28 +4,43 @@ from langfuse.model import PromptClient
 from pydantic import BaseModel
 from jsonschema_pydantic import jsonschema_to_pydantic
 
+from fastapi.concurrency import run_in_threadpool
 import os
+
+
+# DATA
+
+
+class PromptConfig(BaseModel):
+    args: dict
+    placeholders: dict | None = None
+    metadata: dict | None = None
+
+
+# HELPER
 
 
 class ClientManager:
     clients = {}
 
     @classmethod
-    def _init_client(cls, project: str):
+    async def _init_client(cls, project: str):
         # set standardized keys as litellm creates client internally overriding params
         os.environ["LANGFUSE_PUBLIC_KEY"] = os.getenv(f"LANGFUSE_PUBLIC_KEY_{project.upper()}")
         os.environ["LANGFUSE_SECRET_KEY"] = os.getenv(f"LANGFUSE_SECRET_KEY_{project.upper()}")
-        cls.clients[project] = Langfuse()
+        cls.clients[project] = await run_in_threadpool(Langfuse)
 
     @classmethod
-    def get_client(cls, project: str):
+    async def get_client(cls, project: str):
         if project not in cls.clients:
-            cls._init_client(project)
+            await cls._init_client(project)
 
         return cls.clients[project]
 
 
-# HELPER
+async def fetch_prompt(prompt_config: PromptConfig):
+    lf = await ClientManager.get_client(prompt_config.args.pop("project"))
+    return await run_in_threadpool(lf.get_prompt, **prompt_config.args)
 
 
 def handle_response_format(json_schema):
@@ -67,17 +82,10 @@ def handle_messages(prompt: PromptClient, placeholders: dict):
 # MAIN
 
 
-class PromptConfig(BaseModel):
-    args: dict
-    placeholders: dict | None = None
-    metadata: dict | None = None
-
-
 def track(func):
     async def wrapper(prompt_config: PromptConfig):
         # get or init client and get prompt object
-        lf = ClientManager.get_client(prompt_config.args.pop("project"))
-        prompt = lf.get_prompt(**prompt_config.args)
+        prompt = await fetch_prompt(prompt_config)
 
         # extract prompt placeholders and litellm params
         placeholders = prompt_config.placeholders or {}
