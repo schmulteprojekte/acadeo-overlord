@@ -8,7 +8,7 @@ from src.endpoints import ai, test
 
 app = FastAPI()
 
-app.include_router(ai.langfuse_router)
+app.include_router(ai.router)
 app.include_router(test.router)
 
 limits.setup(app, rates)
