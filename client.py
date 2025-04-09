@@ -100,7 +100,9 @@ class Overlord:
     def auth(cls, api_key: str):
         if not cls.server:
             raise ValueError("No server url specified!")
-        cls._session.headers.update({"x-api-key": api_key})
+
+        if "x-api-key" not in cls._session.headers or cls._session.headers["x-api-key"] != api_key:
+            cls._session.headers.update({"x-api-key": api_key})
 
     @classmethod
     def ping(cls):
