@@ -13,9 +13,9 @@ app.include_router(ai.router)
 app.include_router(test.router)
 
 
-logging.setup(app, name)
-limits.setup(app, rates)
 cors.setup(app, origins)
+limits.setup(app, rates)
+logging.setup(app, name)
 
 
 @app.get("/", dependencies=[auth.via_api_key])
