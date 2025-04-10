@@ -20,6 +20,7 @@ def endpoint(func):
         except Exception as e:
             event_type, event_data = "error", dict(type=type(e).__name__, message=str(e))
 
-        return EventSourceResponse(create_event(event_type, event_data))
+        response = EventSourceResponse(create_event(event_type, event_data))
+        return response
 
     return wrapper
