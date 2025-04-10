@@ -18,7 +18,7 @@ def endpoint(func):
                 raise ValueError("No event data received")
 
         except Exception as e:
-            event_type, event_data = "error", e.__dict__
+            event_type, event_data = "error", dict(type=type(e).__name__, message=str(e))
 
         return EventSourceResponse(create_event(event_type, event_data))
 
