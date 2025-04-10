@@ -3,7 +3,8 @@ from fastapi.concurrency import run_in_threadpool
 
 from src.security import auth
 from src.core import sse
-from src.utils import gen_uuid
+
+import uuid
 
 
 router = APIRouter(prefix="/test")
@@ -12,4 +13,4 @@ router = APIRouter(prefix="/test")
 @router.post("/gen_uuid", dependencies=[auth.via_api_key])
 @sse.endpoint
 async def _():
-    return await run_in_threadpool(gen_uuid)
+    return await run_in_threadpool(lambda: str(uuid.uuid4()))
