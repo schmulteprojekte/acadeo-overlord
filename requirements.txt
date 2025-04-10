@@ -5,4 +5,3 @@ requests==2.32.3
 langfuse==2.60.2
 litellm==1.64.1
 slowapi==0.1.9
-git+https://github.com/emilrueh/jsonschema-pydantic.git@main  # includes Literal

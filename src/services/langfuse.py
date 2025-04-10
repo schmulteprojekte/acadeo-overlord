@@ -2,7 +2,7 @@ from langfuse import Langfuse
 from langfuse.model import PromptClient
 
 from pydantic import BaseModel
-from jsonschema_pydantic import jsonschema_to_pydantic
+from src.utils.schema_to_model import transform
 
 from fastapi.concurrency import run_in_threadpool
 import os
@@ -45,7 +45,8 @@ async def fetch_prompt(prompt_config: PromptConfig):
 
 def handle_response_format(json_schema):
     if isinstance(json_schema, dict):
-        return jsonschema_to_pydantic(json_schema)
+        response_format: BaseModel = transform(json_schema)
+        return response_format
 
     elif isinstance(json_schema, str):
         # return {"type", "json_object"}
@@ -102,7 +103,7 @@ def track(func):
         # build litellm standard prompt
         params["messages"] = handle_messages(prompt, placeholders)
 
-        # send json schema as structured response format
+        # convert json schema to structured response format
         if schema:
             params["response_format"] = handle_response_format(schema)
 
