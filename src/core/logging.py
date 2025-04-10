@@ -82,10 +82,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 # INIT
 
 
-def setup(app: FastAPI, name: str = None):
+def setup(app: FastAPI, name: str):
     global logger
 
-    logger = logging.getLogger(name or "overlord")
+    logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
 
     handler = logging.StreamHandler()
