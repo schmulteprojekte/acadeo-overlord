@@ -53,7 +53,7 @@ class PromptManager:
         return prompt_config
 
 
-class Overlord:
+class OverlordClient:
     """
     Server client for the Overlord API.
 
@@ -61,68 +61,85 @@ class Overlord:
 
     ```python
     # init
-    Overlord.server = "http://your-server-url"
-    Overlord.auth("your-api-key")
+    overlord = OverlordClient("http://your-server-url")
+    overlord.auth("your-api-key")
 
     # check health
-    response = Overlord.ping()
+    Overlord.ping().text
 
     # request single event
-    response = next(Overlord.request("endpoint", "POST", data={}))
+    response = next(overlord.request("endpoint", "POST", data={}))
     ```
     """
 
-    server: str = None
-    _session = requests.Session()
+    def __init__(self, server: str):
+        self.server = server
+        self._session = requests.Session()
 
-    @classmethod
-    def _construct_url(cls, endpoint: str = None):
-        return f"{cls.server.rstrip('/')}/{(endpoint or '').lstrip('/')}"
+    # ---
+
+    def _construct_url(self, endpoint: str = None):
+        return f"{self.server.rstrip('/')}/{(endpoint or '').lstrip('/')}"
+
+    @staticmethod
+    def _present(event_data):
+        if isinstance(event_data, str):
+            with contextlib.suppress(json.JSONDecodeError):
+                event_data = json.loads(event_data)
+        return event_data
+
+    def _create_server_error(self, event_data):
+        prefix = "Overlord"
+        error_type = f"{prefix}_{event_data['type']}"
+        ErrorClass = type(error_type, (Exception,), {})
+        return ErrorClass(event_data["message"])
 
     @staticmethod
     def _parse_sse(response) -> Generator:
         for line in response.iter_lines():
+            if line.startswith(b"event:"):
+                event_type = line.split(b":", 1)[1].strip()
+                continue
+
             if line.startswith(b"data:"):
-                data_line = line.split(b":", 1)[1].strip()
+                event_data = line.split(b":", 1)[1].strip()
                 try:
-                    yield json.loads(data_line)
+                    yield event_type.decode(), json.loads(event_data)
                 except json.JSONDecodeError:
                     continue
 
-    @staticmethod
-    def _present(response):
-        if isinstance(response, str):
-            with contextlib.suppress(json.JSONDecodeError):
-                response = json.loads(response)
-        return response
+    def _raise_or_return(self, response):
+        for event_type, event_data in self._parse_sse(response):
+            if event_type == "error":
+                raise self._create_server_error(event_data)
+            yield self._present(event_data)
 
-    @classmethod
-    def auth(cls, api_key: str):
-        if not cls.server:
+    # ---
+
+    def auth(self, api_key: str):
+        if not self.server:
             raise ValueError("No server url specified!")
 
-        if "x-api-key" not in cls._session.headers or cls._session.headers["x-api-key"] != api_key:
-            cls._session.headers.update({"x-api-key": api_key})
+        if "x-api-key" not in self._session.headers or self._session.headers["x-api-key"] != api_key:
+            self._session.headers.update({"x-api-key": api_key})
 
-    @classmethod
-    def ping(cls):
-        response = cls._session.request("GET", cls._construct_url())
+    def ping(self):
+        response = self._session.request("GET", self._construct_url())
         response.raise_for_status()
         return response
 
-    @classmethod
     def request(
-        cls,
+        self,
         endpoint: str = None,
         method: Literal["GET", "POST"] = "GET",
         data: dict = None,
     ) -> Generator:
 
-        with cls._session.request(
+        with self._session.request(
             method,
-            cls._construct_url(endpoint),
+            self._construct_url(endpoint),
             json=data,
             stream=True,
         ) as response:
             response.raise_for_status()
-            yield from map(cls._present, cls._parse_sse(response))
+            yield from self._raise_or_return(response)

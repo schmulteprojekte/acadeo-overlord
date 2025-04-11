@@ -20,4 +20,4 @@ logging.setup(app, name)
 
 @app.get("/", dependencies=[auth.via_api_key])
 def health_check():
-    return Response("Overlord is awake!")
+    return Response(f"{name} is awake")
