@@ -65,7 +65,7 @@ class OverlordClient:
     overlord.auth("your-api-key")
 
     # check health
-    Overlord.ping().text
+    overlord.ping().text
 
     # request single event
     response = next(overlord.request("endpoint", "POST", data={}))
