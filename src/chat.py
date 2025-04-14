@@ -1,15 +1,17 @@
 from src.services import langfuse, litellm
 
-from langfuse.model import PromptClient
+from src.core.logging import get_logger
 from src.utils.schema_to_model import transform
-
 from pydantic import BaseModel
 import uuid
 
 
+logger = get_logger()  # why doesn't it work?
+
+
 class ChatConfig(BaseModel):
-    chat_id: str
-    prompt_config: langfuse.PromptConfig
+    chat_id: str = None
+    prompt_config: langfuse.PromptConfig  # or messages | just text (depending on retry with lf prompt or chat with random prompt)
 
 
 def handle_response_format(json_schema):
@@ -25,15 +27,15 @@ def handle_response_format(json_schema):
 def _handle_multimodal_messages(prompt, urls):
     for message in prompt:
         if message["role"] == "user":
-            multimodal_messages = [{"type": "text", "text": message["content"]}]
+            multimodal_messages = [dict(type="text", text=message["content"])]
             for url in urls:
-                multimodal_messages.append({"type": "image_url", "image_url": url})
+                multimodal_messages.append(dict(type="image_url", image_url=url))
             message["content"] = multimodal_messages
 
     return prompt
 
 
-def handle_messages(prompt: PromptClient, placeholders: dict):
+def handle_messages(prompt: langfuse.PromptClient, placeholders: dict):
     # pop urls from params to send as multi-modal messages
     file_urls = placeholders.pop("file_urls", None)
 
@@ -41,7 +43,7 @@ def handle_messages(prompt: PromptClient, placeholders: dict):
 
     if isinstance(compiled_prompt, str):
         # turn single user prompt to message
-        compiled_prompt = [{"role": "user", "content": compiled_prompt}]
+        compiled_prompt = [dict(role="user", content=compiled_prompt)]
 
     if file_urls:
         compiled_prompt = _handle_multimodal_messages(compiled_prompt, file_urls)
@@ -52,13 +54,13 @@ def handle_messages(prompt: PromptClient, placeholders: dict):
 class Chat:
     instances: dict = {}
 
-    async def __init__(self, messages):
-        self.history = messages
+    def __init__(self, messages):
+        self.history = messages  # how to preserve / delete? Perhaps should be handled by client afterall?
 
     @classmethod
-    async def _setup(cls, config: langfuse.PromptConfig):
+    def _setup(cls, config: langfuse.PromptConfig):
         chat_id = str(uuid.uuid4())
-        cls.instances[chat_id] = await cls(config)
+        cls.instances[chat_id] = cls(config)
         return chat_id
 
     @classmethod
@@ -73,7 +75,7 @@ class Chat:
         schema = args.pop("json_schema", None)
 
         # enable prompt management via litellm metadata
-        args["metadata"] = {"prompt": langfuse_prompt}
+        args["metadata"] = {"prompt": langfuse_prompt}  # add session id: https://github.com/orgs/langfuse/discussions/1536
 
         # build litellm standard prompt
         args["messages"] = self.history
@@ -82,7 +84,7 @@ class Chat:
         if schema:
             args["response_format"] = handle_response_format(schema)
 
-        # add custom metadata to generic from prompt
+        # add custom metadata from prompt
         if metadata:
             args["metadata"]["custom"] = metadata
 
@@ -95,15 +97,19 @@ class Chat:
 
     @classmethod
     async def call(cls, config: ChatConfig):
-        chat_id = config.chat_id
-        prompt_config = config.prompt
-
+        prompt_config = config.prompt_config
         placeholders = prompt_config.placeholders
         metadata = prompt_config.metadata
-        messages = handle_messages(langfuse_prompt, placeholders)
 
         langfuse_prompt = await langfuse.fetch_prompt(prompt_config)
+        messages = handle_messages(langfuse_prompt, placeholders)
 
-        chat = cls._grab_instance(chat_id) if chat_id else await cls._setup(messages)
+        chat_id = config.chat_id or cls._setup(messages)
+        chat = cls._grab_instance(chat_id)
+
         args = chat._construct_litellm_args(langfuse_prompt, metadata)
-        return await chat._get_response(args)
+        response = await chat._get_response(args)
+
+        print(len(chat.history))
+
+        return chat_id, response
