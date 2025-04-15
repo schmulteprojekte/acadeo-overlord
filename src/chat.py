@@ -1,17 +1,23 @@
+from pydantic import BaseModel
+from src.utils.schema_to_model import transform
 from src.services import langfuse, litellm
 
-from src.core.logging import get_logger
-from src.utils.schema_to_model import transform
-from pydantic import BaseModel
-import uuid
+# NOTE:
+# - where do I get the params from?? model etc. etc. - should be stored from langfuse prompt in client!!
+# - what json schema / response_format should be used for chat messages? same as lf prompt's throughout or none or new?
+
+# - possibly it should not be either ChatData or PromptConfig but rather ChatData always containing PromptConfig but either with or without messages
+#   - but then I could just set the prompt again
+#   - I feel like I am spinning in circles and am confused...
+
+# so should I be storing the session id with the langfuse prompt in client to track the various chats?
 
 
-logger = get_logger()  # why doesn't it work?
-
-
-class ChatConfig(BaseModel):
-    chat_id: str = None
-    prompt_config: langfuse.PromptConfig  # or messages | just text (depending on retry with lf prompt or chat with random prompt)
+class ChatData(BaseModel):
+    lf_prompt_config: langfuse.PromptConfig
+    message_history: list[dict] | None = None
+    file_urls: list[str] | None = None
+    metadata: dict | None = None
 
 
 def handle_response_format(json_schema):
@@ -35,81 +41,53 @@ def _handle_multimodal_messages(prompt, urls):
     return prompt
 
 
-def handle_messages(prompt: langfuse.PromptClient, placeholders: dict):
-    # pop urls from params to send as multi-modal messages
-    file_urls = placeholders.pop("file_urls", None)
-
-    compiled_prompt = prompt.compile(**placeholders)
-
-    if isinstance(compiled_prompt, str):
+def handle_messages(messages, file_urls):
+    if isinstance(messages, str):
         # turn single user prompt to message
-        compiled_prompt = [dict(role="user", content=compiled_prompt)]
+        messages = [{"role": "user", "content": messages}]
 
     if file_urls:
-        compiled_prompt = _handle_multimodal_messages(compiled_prompt, file_urls)
+        messages = _handle_multimodal_messages(messages, file_urls)
 
-    return compiled_prompt
+    return messages
 
 
-class Chat:
-    instances: dict = {}
+async def call(data: ChatData):
+    # get or init client and get prompt object
+    prompt = await langfuse.fetch_prompt(data.lf_prompt_config.args)
 
-    def __init__(self, messages):
-        self.history = messages  # how to preserve / delete? Perhaps should be handled by client afterall?
+    # extract litellm params
+    params = prompt.config.copy()
 
-    @classmethod
-    def _setup(cls, config: langfuse.PromptConfig):
-        chat_id = str(uuid.uuid4())
-        cls.instances[chat_id] = cls(config)
-        return chat_id
+    # pop json schema from params and turn into model
+    schema = params.pop("json_schema", None)
 
-    @classmethod
-    def _grab_instance(cls, chat_id):
-        if chat_id in cls.instances:
-            return cls.instances[chat_id]
+    # ---
 
-    def _construct_litellm_args(self, langfuse_prompt, metadata):
-        args = langfuse_prompt.config.copy()
+    # build litellm standardized prompt messages
+    messages = handle_messages(data.message_history or prompt.compile(**(data.placeholders or {})), data.file_urls)
+    params["messages"] = messages
 
-        # pop json schema from params and turn into model
-        schema = args.pop("json_schema", None)
+    # convert json schema to structured response format
+    if schema:
+        params["response_format"] = handle_response_format(schema)
 
+    metadata = data.metadata
+
+    if not data.message_history:
         # enable prompt management via litellm metadata
-        args["metadata"] = {"prompt": langfuse_prompt}  # add session id: https://github.com/orgs/langfuse/discussions/1536
+        params["metadata"] = {"prompt": prompt}
 
-        # build litellm standard prompt
-        args["messages"] = self.history
+    # add session id for chat tracking
+    params["metadata"]["session_id"] = metadata.pop("session_id", None)
 
-        # convert json schema to structured response format
-        if schema:
-            args["response_format"] = handle_response_format(schema)
+    if metadata:
+        # add custom metadata to generic from prompt
+        params["metadata"]["custom"] = metadata
 
-        # add custom metadata from prompt
-        if metadata:
-            args["metadata"]["custom"] = metadata
+    # ---
 
-        return args
+    response = await litellm.call(**params)
 
-    async def _get_response(self, args):
-        response = await litellm.call(**args)
-        self.history.append(dict(role="assistant", content=response))
-        return response
-
-    @classmethod
-    async def call(cls, config: ChatConfig):
-        prompt_config = config.prompt_config
-        placeholders = prompt_config.placeholders
-        metadata = prompt_config.metadata
-
-        langfuse_prompt = await langfuse.fetch_prompt(prompt_config)
-        messages = handle_messages(langfuse_prompt, placeholders)
-
-        chat_id = config.chat_id or cls._setup(messages)
-        chat = cls._grab_instance(chat_id)
-
-        args = chat._construct_litellm_args(langfuse_prompt, metadata)
-        response = await chat._get_response(args)
-
-        print(len(chat.history))
-
-        return chat_id, response
+    messages.append(dict(role="assistant", content=response))
+    return messages

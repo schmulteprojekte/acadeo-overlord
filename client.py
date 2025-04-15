@@ -1,7 +1,10 @@
-import requests, json, contextlib, os
+import requests, json, contextlib, os, uuid
 from typing import Literal, Generator
 
 from langfuse import Langfuse
+
+
+# ---
 
 
 class PromptManager:
@@ -35,12 +38,12 @@ class PromptManager:
             commit_message=commit_msg,
         )
 
-    def get_prompt(self, name, label, version=None, *, placeholders=None, metadata=None):
+    def prepare_prompt(self, name, label, version=None, *, placeholders=None, metadata=None) -> dict:
         args = dict(
             name=name,
             label=label,
             version=version,
-            project=self.project,
+            project=self.project,  # custom
         )
 
         prompt_config = dict(args=args)
@@ -72,9 +75,14 @@ class OverlordClient:
     ```
     """
 
-    def __init__(self, server: str):
+    def __init__(self, server: str, project: str):
         self.server = server
         self._session = requests.Session()
+
+        self.prompt_manager = PromptManager(project)
+        self._chat_history: list[dict] = []
+        self._active_langfuse_prompt = None
+        self._chat_session_id = None
 
     # ---
 
@@ -143,3 +151,33 @@ class OverlordClient:
         ) as response:
             response.raise_for_status()
             yield from self._raise_or_return(response)
+
+    def chat(self, prompt: str | dict, endpoint: str = "langfuse/chat"):
+        # I feel like this would become the kind of class structure that I was building server-side
+        # where each chat will get its own instance and calling the chat is done from a classmethod
+
+        # however for now while it is not async and sharing states we can simply reset the internal
+        # chat history when a new langfuse prompt was used to call the endpoint
+
+        if isinstance(prompt, dict):
+            # lf prompt_config
+            # - reset chat history
+            # - create new session id
+
+            prompt_config = self.prompt_manager.prepare_prompt(**prompt)
+            self._active_langfuse_prompt = prompt_config
+            self._chat_session_id = f"{prompt_config.name}_{uuid.uuid4()}"
+
+        elif isinstance(prompt, str):
+            # chat message prompt
+            # - use chat history
+            # - use session id
+
+            prompt_config = self._active_langfuse_prompt
+            self._chat_history.append(dict(role="user", content=prompt))
+
+        chat_data = dict(prompt_config=prompt_config, message_history=self._chat_history)  # TODO: adjust
+
+        response = next(self.request(endpoint, "POST", chat_data))
+        self._chat_history = response
+        return self._present(response[-1]["content"])
