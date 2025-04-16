@@ -18,6 +18,7 @@ class ChatData(BaseModel):
     message_history: list[dict] = []
     file_urls: list[str] = []
     metadata: dict
+    is_new_lf_prompt: bool
 
 
 def handle_response_format(json_schema):
@@ -41,7 +42,7 @@ def _handle_multimodal_messages(prompt, urls):
     return prompt
 
 
-def handle_messages(messages, file_urls):
+def handle_messages(messages, file_urls) -> list[dict]:
     if isinstance(messages, str):
         # turn single user prompt to message
         messages = [{"role": "user", "content": messages}]
@@ -57,6 +58,7 @@ async def call(data: ChatData):
     message_history = data.message_history
     file_urls = data.file_urls
     metadata = data.metadata
+    is_new_lf_prompt = data.is_new_lf_prompt
 
     # ---
 
@@ -72,8 +74,9 @@ async def call(data: ChatData):
     # ---
 
     # build litellm standardized prompt messages
-    messages = handle_messages(message_history or prompt.compile(**(lf_prompt_config.placeholders or {})), file_urls)
-    params["messages"] = messages
+    if is_new_lf_prompt:
+        message_history += handle_messages(prompt.compile(**(lf_prompt_config.placeholders or {})), file_urls)
+    params["messages"] = message_history
 
     # convert json schema to structured response format
     if schema:
@@ -85,13 +88,13 @@ async def call(data: ChatData):
     params["metadata"] = metadata
 
     # enable prompt management via litellm metadata
-    if not data.message_history:
+    if is_new_lf_prompt:
         params["metadata"]["prompt"] = prompt
 
     # ---
 
     response = await litellm.call(**params)
 
-    messages.append(dict(role="assistant", content=response))
+    message_history.append(dict(role="assistant", content=response))
 
-    return messages
+    return message_history

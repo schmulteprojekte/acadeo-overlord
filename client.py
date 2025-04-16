@@ -17,25 +17,6 @@ class PromptConfig(BaseModel):
     placeholders: dict = {}
 
 
-# class RequestData(BaseModel):
-#     prompt: str | PromptConfig
-#     file_urls: list[str] = []
-#     metadata: dict = {}
-
-
-# # ---
-
-
-class ChatData(BaseModel):
-    lf_prompt_config: PromptConfig
-    message_history: list[dict] = []
-    file_urls: list[str] = []
-    metadata: dict
-
-
-# # ---
-
-
 class PromptManager:
     def __init__(self, project: str):
         self.project = project
@@ -83,6 +64,14 @@ class PromptManager:
         return prompt_config
 
 
+class ChatData(BaseModel):
+    lf_prompt_config: PromptConfig
+    message_history: list[dict] = []
+    file_urls: list[str] = []
+    metadata: dict
+    is_new_lf_prompt: bool
+
+
 class OverlordClient:
     """
     Server client for the Overlord API.
@@ -107,7 +96,7 @@ class OverlordClient:
         self._session = requests.Session()
 
         self._prompt_manager = PromptManager(project)
-        self._chat_history: list[dict] = []
+        self._message_history: list[dict] = []
         self._active_langfuse_prompt = None
         self._chat_session_id = None
 
@@ -192,33 +181,42 @@ class OverlordClient:
 
         # ---
 
-        # TODO: this current approach doesn't work because
-        # we need to be able to also use langfuse prompts
-        # as chat messages and not only basic string prompts
+        # because we are always passing the langfuse prompt config anyways
+        # it should be up to the server to add the langfuse prompt to the messages
+        # if it is provided and not empty and not in the chat already
 
-        # possibly compare the newly input langfuse prompt
-        # params to the one sent before perhaps via hash
+        is_new_lf_prompt = False
 
-        if isinstance(prompt, dict):  # init via langfuse prompt
+        # use langfuse prompt
+        if isinstance(prompt, dict):
             prompt_config = self._prompt_manager.prepare_prompt(**prompt)
-            self._active_langfuse_prompt = prompt_config
 
-            self._chat_session_id = f"{prompt_config.args.name}.{prompt_config.args.label}_{uuid.uuid4()}"
-            self._chat_history = []  # reset
+            # init new chat session
+            if prompt_config != self._active_langfuse_prompt:
+                self._active_langfuse_prompt = prompt_config
+                self._chat_session_id = f"{prompt_config.args.name}.{prompt_config.args.label}_{uuid.uuid4()}"
+                self._message_history = []  # reset
+                is_new_lf_prompt = True
 
-        elif isinstance(prompt, str):  # chat using simple prompts
-            prompt_config = self._active_langfuse_prompt
-            self._chat_history.append(dict(role="user", content=prompt))
+                # TODO FIXME: now any new lf prompt input will override the chat even if we want to use it!
+
+        # keep chatting using simple prompts
+        elif isinstance(prompt, str):
+            self._message_history.append(dict(role="user", content=prompt))
+
+        else:
+            raise ValueError("Something isn't right with the provided prompt.")
 
         # ---
 
         chat_data = ChatData(
-            lf_prompt_config=prompt_config,
+            lf_prompt_config=self._active_langfuse_prompt,
             metadata={"session_id": self._chat_session_id},
+            is_new_lf_prompt=is_new_lf_prompt,
         )
 
-        if self._chat_history:
-            chat_data.message_history = self._chat_history
+        if self._message_history:
+            chat_data.message_history = self._message_history
         if file_urls:
             chat_data.file_urls = file_urls
         if custom_metadata:
@@ -230,5 +228,5 @@ class OverlordClient:
 
         # ---
 
-        self._chat_history = response
+        self._message_history = response
         return self._present(response[-1]["content"])
