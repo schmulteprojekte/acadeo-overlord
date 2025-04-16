@@ -1,10 +1,39 @@
 import requests, json, contextlib, os, uuid
 from typing import Literal, Generator
+from pydantic import BaseModel
 
 from langfuse import Langfuse
 
 
-# ---
+class PromptArgs(BaseModel):
+    name: str
+    label: str
+    version: str | None = None
+
+
+class PromptConfig(BaseModel):
+    args: PromptArgs
+    project: str
+    placeholders: dict = {}
+
+
+# class RequestData(BaseModel):
+#     prompt: str | PromptConfig
+#     file_urls: list[str] = []
+#     metadata: dict = {}
+
+
+# # ---
+
+
+class ChatData(BaseModel):
+    lf_prompt_config: PromptConfig
+    message_history: list[dict] = []
+    file_urls: list[str] = []
+    metadata: dict
+
+
+# # ---
 
 
 class PromptManager:
@@ -38,20 +67,18 @@ class PromptManager:
             commit_message=commit_msg,
         )
 
-    def prepare_prompt(self, name, label, version=None, *, placeholders=None, metadata=None) -> dict:
-        args = dict(
-            name=name,
-            label=label,
-            version=version,
-            project=self.project,  # custom
+    def prepare_prompt(self, args, placeholders=[]) -> PromptConfig:
+        prompt_config = PromptConfig(
+            args=PromptArgs(
+                name=args["name"],
+                label=args["label"],
+                version=args.get("version"),
+            ),
+            project=self.project,
         )
 
-        prompt_config = dict(args=args)
-
         if placeholders:
-            prompt_config["placeholders"] = placeholders
-        if metadata:
-            prompt_config["metadata"] = metadata
+            prompt_config.placeholders = placeholders
 
         return prompt_config
 
@@ -76,10 +103,10 @@ class OverlordClient:
     """
 
     def __init__(self, server: str, project: str):
-        self.server = server
+        self._server = server
         self._session = requests.Session()
 
-        self.prompt_manager = PromptManager(project)
+        self._prompt_manager = PromptManager(project)
         self._chat_history: list[dict] = []
         self._active_langfuse_prompt = None
         self._chat_session_id = None
@@ -87,7 +114,7 @@ class OverlordClient:
     # ---
 
     def _construct_url(self, endpoint: str = None):
-        return f"{self.server.rstrip('/')}/{(endpoint or '').lstrip('/')}"
+        return f"{self._server.rstrip('/')}/{(endpoint or '').lstrip('/')}"
 
     @staticmethod
     def _present(event_data):
@@ -125,7 +152,7 @@ class OverlordClient:
     # ---
 
     def auth(self, api_key: str):
-        if not self.server:
+        if not self._server:
             raise ValueError("No server url specified!")
 
         if "x-api-key" not in self._session.headers or self._session.headers["x-api-key"] != api_key:
@@ -152,32 +179,56 @@ class OverlordClient:
             response.raise_for_status()
             yield from self._raise_or_return(response)
 
-    def chat(self, prompt: str | dict, endpoint: str = "langfuse/chat"):
+    def chat(self, request_data: dict, endpoint: str = "langfuse/chat"):
         # I feel like this would become the kind of class structure that I was building server-side
         # where each chat will get its own instance and calling the chat is done from a classmethod
 
         # however for now while it is not async and sharing states we can simply reset the internal
         # chat history when a new langfuse prompt was used to call the endpoint
 
-        if isinstance(prompt, dict):
-            # lf prompt_config
-            # - reset chat history
-            # - create new session id
+        prompt = request_data["prompt"]
+        file_urls = request_data.get("file_urls", [])
+        custom_metadata = request_data.get("metadata", {})
 
-            prompt_config = self.prompt_manager.prepare_prompt(**prompt)
+        # ---
+
+        # TODO: this current approach doesn't work because
+        # we need to be able to also use langfuse prompts
+        # as chat messages and not only basic string prompts
+
+        # possibly compare the newly input langfuse prompt
+        # params to the one sent before perhaps via hash
+
+        if isinstance(prompt, dict):  # init via langfuse prompt
+            prompt_config = self._prompt_manager.prepare_prompt(**prompt)
             self._active_langfuse_prompt = prompt_config
-            self._chat_session_id = f"{prompt_config.name}_{uuid.uuid4()}"
 
-        elif isinstance(prompt, str):
-            # chat message prompt
-            # - use chat history
-            # - use session id
+            self._chat_session_id = f"{prompt_config.args.name}.{prompt_config.args.label}_{uuid.uuid4()}"
+            self._chat_history = []  # reset
 
+        elif isinstance(prompt, str):  # chat using simple prompts
             prompt_config = self._active_langfuse_prompt
             self._chat_history.append(dict(role="user", content=prompt))
 
-        chat_data = dict(prompt_config=prompt_config, message_history=self._chat_history)  # TODO: adjust
+        # ---
 
-        response = next(self.request(endpoint, "POST", chat_data))
+        chat_data = ChatData(
+            lf_prompt_config=prompt_config,
+            metadata={"session_id": self._chat_session_id},
+        )
+
+        if self._chat_history:
+            chat_data.message_history = self._chat_history
+        if file_urls:
+            chat_data.file_urls = file_urls
+        if custom_metadata:
+            chat_data.metadata["custom"] = custom_metadata
+
+        # ---
+
+        response = next(self.request(endpoint, "POST", chat_data.model_dump()))
+
+        # ---
+
         self._chat_history = response
         return self._present(response[-1]["content"])

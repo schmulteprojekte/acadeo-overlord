@@ -15,9 +15,9 @@ from src.services import langfuse, litellm
 
 class ChatData(BaseModel):
     lf_prompt_config: langfuse.PromptConfig
-    message_history: list[dict] | None = None
-    file_urls: list[str] | None = None
-    metadata: dict | None = None
+    message_history: list[dict] = []
+    file_urls: list[str] = []
+    metadata: dict
 
 
 def handle_response_format(json_schema):
@@ -53,8 +53,15 @@ def handle_messages(messages, file_urls):
 
 
 async def call(data: ChatData):
+    lf_prompt_config = data.lf_prompt_config
+    message_history = data.message_history
+    file_urls = data.file_urls
+    metadata = data.metadata
+
+    # ---
+
     # get or init client and get prompt object
-    prompt = await langfuse.fetch_prompt(data.lf_prompt_config.args)
+    prompt = await langfuse.fetch_prompt(lf_prompt_config)
 
     # extract litellm params
     params = prompt.config.copy()
@@ -65,29 +72,26 @@ async def call(data: ChatData):
     # ---
 
     # build litellm standardized prompt messages
-    messages = handle_messages(data.message_history or prompt.compile(**(data.placeholders or {})), data.file_urls)
+    messages = handle_messages(message_history or prompt.compile(**(lf_prompt_config.placeholders or {})), file_urls)
     params["messages"] = messages
 
     # convert json schema to structured response format
     if schema:
         params["response_format"] = handle_response_format(schema)
 
-    metadata = data.metadata
+    # ---
 
+    # includes session id (and custom metadata if provided)
+    params["metadata"] = metadata
+
+    # enable prompt management via litellm metadata
     if not data.message_history:
-        # enable prompt management via litellm metadata
-        params["metadata"] = {"prompt": prompt}
-
-    # add session id for chat tracking
-    params["metadata"]["session_id"] = metadata.pop("session_id", None)
-
-    if metadata:
-        # add custom metadata to generic from prompt
-        params["metadata"]["custom"] = metadata
+        params["metadata"]["prompt"] = prompt
 
     # ---
 
     response = await litellm.call(**params)
 
     messages.append(dict(role="assistant", content=response))
+
     return messages

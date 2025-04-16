@@ -13,13 +13,13 @@ import os
 class PromptArgs(BaseModel):
     name: str
     label: str
-    version: str = None
+    version: str | None = None
 
 
 class PromptConfig(BaseModel):
     args: PromptArgs
-    placeholders: dict | None = None
-    # metadata: dict | None = None
+    project: str
+    placeholders: dict = {}
 
 
 # HELPER
@@ -43,9 +43,9 @@ class ClientManager:
         return cls.clients[project]
 
 
-async def fetch_prompt(prompt_args: PromptArgs) -> PromptClient:
-    lf = ClientManager.get_client(prompt_args.pop("project"))
-    return await run_in_threadpool(lf.get_prompt, **prompt_args)  # possibly pass project as separate param/arg
+async def fetch_prompt(prompt_config: PromptConfig) -> PromptClient:
+    lf = ClientManager.get_client(prompt_config.project)
+    return await run_in_threadpool(lf.get_prompt, **prompt_config.args.model_dump())
 
 
 # I still feel like there is a limitation of using the litellm langfuse integration
