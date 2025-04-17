@@ -17,7 +17,7 @@ class PromptConfig(BaseModel):
     placeholders: dict = {}
 
 
-class PromptManager:
+class _PromptManager:
     def __init__(self, project: str):
         self.project = project
         self._lf = self._setup_client(project)
@@ -64,15 +64,7 @@ class PromptManager:
         return prompt_config
 
 
-class ChatData(BaseModel):
-    lf_prompt_config: PromptConfig
-    message_history: list[dict] = []
-    file_urls: list[str] = []
-    metadata: dict
-    is_new_lf_prompt: bool
-
-
-class OverlordClient:
+class _Client:
     """
     Server client for the Overlord API.
 
@@ -80,25 +72,21 @@ class OverlordClient:
 
     ```python
     # init
-    overlord = OverlordClient("http://your-server-url")
-    overlord.auth("your-api-key")
+    overlord = OverlordClient("http://your-server-url", "your-api-key")
 
     # check health
-    overlord.ping().text
+    print(overlord.ping().text)
 
     # request single event
     response = next(overlord.request("endpoint", "POST", data={}))
     ```
     """
 
-    def __init__(self, server: str, project: str):
+    def __init__(self, server: str, api_key: str):
         self._server = server
         self._session = requests.Session()
 
-        self._prompt_manager = PromptManager(project)
-        self._message_history: list[dict] = []
-        self._active_langfuse_prompt = None
-        self._chat_session_id = None
+        self._auth(api_key)
 
     # ---
 
@@ -140,7 +128,7 @@ class OverlordClient:
 
     # ---
 
-    def auth(self, api_key: str):
+    def _auth(self, api_key: str):
         if not self._server:
             raise ValueError("No server url specified!")
 
@@ -151,6 +139,8 @@ class OverlordClient:
         response = self._session.request("GET", self._construct_url())
         response.raise_for_status()
         return response
+
+    # ---
 
     def request(
         self,
@@ -168,53 +158,66 @@ class OverlordClient:
             response.raise_for_status()
             yield from self._raise_or_return(response)
 
-    def chat(self, request_data: dict, endpoint: str = "langfuse/chat"):
-        # I feel like this would become the kind of class structure that I was building server-side
-        # where each chat will get its own instance and calling the chat is done from a classmethod
 
-        # however for now while it is not async and sharing states we can simply reset the internal
-        # chat history when a new langfuse prompt was used to call the endpoint
+class Overlord:
+    def __init__(self, server, api_key, project):
+        self.client = _Client(server, api_key)
+        self.pm = _PromptManager(project)
 
+
+class ChatData(BaseModel):
+    lf_prompt_config: PromptConfig
+    is_new_lf_prompt: bool
+    # ---
+    text_prompt: str | None = None
+    message_history: list[dict] = []
+    # ---
+    file_urls: list[str] = []
+    metadata: dict
+
+
+class Chat:
+    def __init__(self, overlord):
+        # self.client = OverlordChat.overlord_client
+        # self.pm = OverlordChat.prompt_manager
+
+        self.overlord = overlord
+
+        self._message_history: list[dict] = []
+        self._chat_session_id = str(uuid.uuid4())
+        self._active_lf_prompt_config = None
+
+        print(self._chat_session_id)
+
+    def request(self, request_data: dict, endpoint: str = "langfuse/chat"):
         prompt = request_data["prompt"]
         file_urls = request_data.get("file_urls", [])
         custom_metadata = request_data.get("metadata", {})
 
         # ---
 
-        # because we are always passing the langfuse prompt config anyways
-        # it should be up to the server to add the langfuse prompt to the messages
-        # if it is provided and not empty and not in the chat already
-
         is_new_lf_prompt = False
 
         # use langfuse prompt
         if isinstance(prompt, dict):
-            prompt_config = self._prompt_manager.prepare_prompt(**prompt)
+            prompt_config = self.overlord.pm.prepare_prompt(**prompt)
+            prompt = None
 
             # init new chat session
-            if prompt_config != self._active_langfuse_prompt:
-                self._active_langfuse_prompt = prompt_config
-                self._chat_session_id = f"{prompt_config.args.name}.{prompt_config.args.label}_{uuid.uuid4()}"
-                self._message_history = []  # reset
+            if prompt_config != self._active_lf_prompt_config:
+                self._active_lf_prompt_config = prompt_config
                 is_new_lf_prompt = True
-
-                # TODO FIXME: now any new lf prompt input will override the chat even if we want to use it!
-
-        # keep chatting using simple prompts
-        elif isinstance(prompt, str):
-            self._message_history.append(dict(role="user", content=prompt))
-
-        else:
-            raise ValueError("Something isn't right with the provided prompt.")
 
         # ---
 
         chat_data = ChatData(
-            lf_prompt_config=self._active_langfuse_prompt,
-            metadata={"session_id": self._chat_session_id},
+            lf_prompt_config=self._active_lf_prompt_config,
             is_new_lf_prompt=is_new_lf_prompt,
+            metadata={"session_id": self._chat_session_id},
         )
 
+        if prompt:
+            chat_data.text_prompt = prompt
         if self._message_history:
             chat_data.message_history = self._message_history
         if file_urls:
@@ -224,9 +227,9 @@ class OverlordClient:
 
         # ---
 
-        response = next(self.request(endpoint, "POST", chat_data.model_dump()))
+        response = next(self.overlord.client.request(endpoint, "POST", chat_data.model_dump()))
 
         # ---
 
         self._message_history = response
-        return self._present(response[-1]["content"])
+        return self.overlord.client._present(response[-1]["content"])
