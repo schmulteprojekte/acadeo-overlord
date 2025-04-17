@@ -5,6 +5,9 @@ from pydantic import BaseModel
 from langfuse import Langfuse
 
 
+# ---
+
+
 class PromptArgs(BaseModel):
     name: str
     label: str
@@ -62,6 +65,9 @@ class _PromptManager:
             prompt_config.placeholders = placeholders
 
         return prompt_config
+
+
+# ---
 
 
 class _Client:
@@ -159,13 +165,44 @@ class _Client:
             yield from self._raise_or_return(response)
 
 
-class Overlord:
-    def __init__(self, server, api_key, project):
-        self.client = _Client(server, api_key)
-        self.pm = _PromptManager(project)
+# ---
 
 
-class ChatData(BaseModel):
+class ChatInput(BaseModel):
+    prompt: str | dict
+    file_urls: list[str] = []
+    metadata: dict = {}
+
+
+class ChatRequest(BaseModel):
+    """
+    This is mirrored server-side.
+
+    lf_prompt_config:
+        - params and placeholders to get a langfuse prompt
+        - any chat will need to have a langfuse prompt at the start
+        - if a text_prompt is used then the params come from langfuse
+
+    is_new_lf_prompt:
+        - required to check whether we send the langfuse prompt to litellm or not again
+        - otherwise messages are attached to langfuse via session id
+
+    text_prompt:
+        - a simple string can be provided to enable user chatting
+        - will be None if a new lf_prompt_config is provided
+
+    message_history:
+        - built server-side
+        - returned to client
+
+    file_urls:
+        - outside of langfuse prompt so files can be provided to text_prompt calls
+
+    metadata:
+        - will always contain at least the session_id
+        - can contain custom metadata
+    """
+
     lf_prompt_config: PromptConfig
     is_new_lf_prompt: bool
     # ---
@@ -178,58 +215,50 @@ class ChatData(BaseModel):
 
 class Chat:
     def __init__(self, overlord):
-        # self.client = OverlordChat.overlord_client
-        # self.pm = OverlordChat.prompt_manager
-
         self.overlord = overlord
-
+        self.session_id = str(uuid.uuid4())
         self._message_history: list[dict] = []
-        self._chat_session_id = str(uuid.uuid4())
         self._active_lf_prompt_config = None
 
-        print(self._chat_session_id)
+    def _handle_lf_prompt_config(self, prompt_data):
+        prompt_config = self.overlord.pm.prepare_prompt(**prompt_data)
 
-    def request(self, request_data: dict, endpoint: str = "langfuse/chat"):
-        prompt = request_data["prompt"]
-        file_urls = request_data.get("file_urls", [])
-        custom_metadata = request_data.get("metadata", {})
+        if prompt_config != self._active_lf_prompt_config:
+            self._active_lf_prompt_config = prompt_config
+            return True
 
-        # ---
+    def request(self, chat_input: ChatInput, endpoint: str = "langfuse/chat"):
+        prompt_data = chat_input.prompt
+        file_urls = chat_input.file_urls
+        custom_metadata = chat_input.metadata
 
         is_new_lf_prompt = False
+        if isinstance(prompt_data, dict):
+            is_new_lf_prompt = self._handle_lf_prompt_config(prompt_data)
 
-        # use langfuse prompt
-        if isinstance(prompt, dict):
-            prompt_config = self.overlord.pm.prepare_prompt(**prompt)
-            prompt = None
-
-            # init new chat session
-            if prompt_config != self._active_lf_prompt_config:
-                self._active_lf_prompt_config = prompt_config
-                is_new_lf_prompt = True
-
-        # ---
-
-        chat_data = ChatData(
+        chat_request = ChatRequest(
             lf_prompt_config=self._active_lf_prompt_config,
             is_new_lf_prompt=is_new_lf_prompt,
-            metadata={"session_id": self._chat_session_id},
+            text_prompt=None if is_new_lf_prompt else prompt_data,
+            message_history=self._message_history or [],
+            file_urls=file_urls,
+            metadata={"session_id": self.session_id, **({"custom": custom_metadata} if custom_metadata else {})},
         )
 
-        if prompt:
-            chat_data.text_prompt = prompt
-        if self._message_history:
-            chat_data.message_history = self._message_history
-        if file_urls:
-            chat_data.file_urls = file_urls
-        if custom_metadata:
-            chat_data.metadata["custom"] = custom_metadata
-
-        # ---
-
-        response = next(self.overlord.client.request(endpoint, "POST", chat_data.model_dump()))
-
-        # ---
-
+        response = next(self.overlord.client.request(endpoint, "POST", chat_request.model_dump()))
         self._message_history = response
-        return self.overlord.client._present(response[-1]["content"])
+        last_reply = self.overlord.client._present(response[-1]["content"])
+        return last_reply
+
+
+# ---
+
+
+class Overlord:
+    def __init__(self, server, api_key, project):
+        self.client = _Client(server, api_key)
+        self.pm = _PromptManager(project)
+        self.input = ChatInput
+
+    def chat(self):
+        return Chat(self)
