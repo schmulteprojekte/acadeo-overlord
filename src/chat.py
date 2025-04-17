@@ -43,17 +43,16 @@ def handle_messages(
     text_prompt,
     file_urls,
 ) -> list[dict]:
-    # --- EITHER USE LANGFUSE PROMPT IF NEW OR TEXT PROMPT
 
     if is_new_lf_prompt:
         messages = lf_prompt.compile(**(lf_prompt_config.placeholders or {}))
         params["metadata"]["prompt"] = lf_prompt  # enable prompt management via litellm metadata
 
         if isinstance(messages, str):
-            messages = [{"role": "user", "content": messages}]
+            messages = [dict(role="user", content=messages)]
 
     elif isinstance(text_prompt, str):
-        messages = [{"role": "user", "content": text_prompt}]
+        messages = [dict(role="user", content=text_prompt)]
 
     if file_urls:
         messages = _handle_multimodal_messages(messages, file_urls)
@@ -61,7 +60,12 @@ def handle_messages(
     return messages
 
 
-async def call(data: ChatRequest):
+def filter_system_prompts(messages):
+    # only keep the first system prompt if provided
+    return [msg for idx, msg in enumerate(messages) if msg.get("role") != "system" or idx == 0]
+
+
+async def call(data: ChatRequest) -> list[dict]:
     lf_prompt_config = data.lf_prompt_config
     is_new_lf_prompt = data.is_new_lf_prompt
     text_prompt = data.text_prompt
@@ -81,7 +85,6 @@ async def call(data: ChatRequest):
     params["metadata"] = metadata
 
     # pop json schema from params and turn into model
-    # schema = data.json_schema or params.pop("json_schema", None)
     schema = params.pop("json_schema", None)
 
     # ---
@@ -95,6 +98,8 @@ async def call(data: ChatRequest):
         file_urls,
     )
 
+    message_history = filter_system_prompts(message_history)
+
     # build litellm standardized prompt message history
     params["messages"] = message_history
 
@@ -105,7 +110,5 @@ async def call(data: ChatRequest):
     # ---
 
     response = await litellm.call(**params)
-
     message_history.append(dict(role="assistant", content=response))
-
     return message_history
