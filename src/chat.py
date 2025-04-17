@@ -15,10 +15,13 @@ from src.services import langfuse, litellm
 
 class ChatData(BaseModel):
     lf_prompt_config: langfuse.PromptConfig
+    is_new_lf_prompt: bool
+    # ---
+    text_prompt: str | None = None
     message_history: list[dict] = []
+    # ---
     file_urls: list[str] = []
     metadata: dict
-    is_new_lf_prompt: bool
 
 
 def handle_response_format(json_schema):
@@ -42,54 +45,57 @@ def _handle_multimodal_messages(prompt, urls):
     return prompt
 
 
-def handle_messages(messages, file_urls) -> list[dict]:
-    if isinstance(messages, str):
-        # turn single user prompt to message
-        messages = [{"role": "user", "content": messages}]
+async def call(data: ChatData):
+    lf_prompt_config = data.lf_prompt_config
+    is_new_lf_prompt = data.is_new_lf_prompt
+    text_prompt = data.text_prompt
+    message_history = data.message_history
+    file_urls = data.file_urls
+    metadata = data.metadata
+
+    # --- GET PARAMS FROM LAST LANGFUSE PROMPT PROVIDED
+
+    # get or init client and get prompt object
+    lf_prompt = await langfuse.fetch_prompt(lf_prompt_config)
+
+    # extract litellm params
+    params = lf_prompt.config.copy()
+
+    # includes session id (and custom metadata if provided)
+    params["metadata"] = metadata
+
+    # pop json schema from params and turn into model
+    # schema = data.json_schema or params.pop("json_schema", None)
+    schema = params.pop("json_schema", None)
+
+    print(type(text_prompt).__name__)
+    print(is_new_lf_prompt)
+
+    # --- EITHER USE LANGFUSE PROMPT IF NEW OR TEXT PROMPT
+
+    if is_new_lf_prompt:
+        messages = lf_prompt.compile(**(lf_prompt_config.placeholders or {}))
+        params["metadata"]["prompt"] = lf_prompt  # enable prompt management via litellm metadata
+
+        if isinstance(messages, str):
+            messages = [{"role": "user", "content": messages}]
+
+    elif isinstance(text_prompt, str):
+        messages = [{"role": "user", "content": text_prompt}]
 
     if file_urls:
         messages = _handle_multimodal_messages(messages, file_urls)
 
-    return messages
-
-
-async def call(data: ChatData):
-    lf_prompt_config = data.lf_prompt_config
-    message_history = data.message_history
-    file_urls = data.file_urls
-    metadata = data.metadata
-    is_new_lf_prompt = data.is_new_lf_prompt
+    message_history += messages
 
     # ---
 
-    # get or init client and get prompt object
-    prompt = await langfuse.fetch_prompt(lf_prompt_config)
-
-    # extract litellm params
-    params = prompt.config.copy()
-
-    # pop json schema from params and turn into model
-    schema = params.pop("json_schema", None)
-
-    # ---
-
-    # build litellm standardized prompt messages
-    if is_new_lf_prompt:
-        message_history += handle_messages(prompt.compile(**(lf_prompt_config.placeholders or {})), file_urls)
+    # build litellm standardized prompt message history
     params["messages"] = message_history
 
     # convert json schema to structured response format
     if schema:
         params["response_format"] = handle_response_format(schema)
-
-    # ---
-
-    # includes session id (and custom metadata if provided)
-    params["metadata"] = metadata
-
-    # enable prompt management via litellm metadata
-    if is_new_lf_prompt:
-        params["metadata"]["prompt"] = prompt
 
     # ---
 
