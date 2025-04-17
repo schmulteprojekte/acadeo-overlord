@@ -5,6 +5,13 @@ from pydantic import BaseModel
 from langfuse import Langfuse
 
 
+def loads_if_json(data):
+    if isinstance(data, str):
+        with contextlib.suppress(json.JSONDecodeError):
+            data = json.loads(data)
+    return data
+
+
 # ---
 
 
@@ -34,10 +41,11 @@ class _PromptManager:
     def create_prompt(
         self,
         name,
-        messages,
+        messages: list[dict],
         *,
         labels: list[str] = None,
         tags: list[str] = None,
+        prompt_type: Literal["text", "chat"] = None,
         commit_msg: str = None,
         config: dict = None,
     ):
@@ -46,7 +54,7 @@ class _PromptManager:
             prompt=messages,
             labels=labels or [],
             tags=tags,
-            type="chat",
+            type=prompt_type or "chat",
             config=config,
             commit_message=commit_msg,
         )
@@ -72,19 +80,19 @@ class _PromptManager:
 
 class _Client:
     """
-    Server client for the Overlord API.
+    Request client for the Overlord API.
 
     ### Usage:
 
     ```python
     # init
-    overlord = OverlordClient("http://your-server-url", "your-api-key")
+    client = Client("http://your-server-url", "your-api-key")
 
     # check health
-    print(overlord.ping().text)
+    print(client.ping().text)
 
     # request single event
-    response = next(overlord.request("endpoint", "POST", data={}))
+    response = next(client.request("endpoint", "POST", data={}))
     ```
     """
 
@@ -98,13 +106,6 @@ class _Client:
 
     def _construct_url(self, endpoint: str = None):
         return f"{self._server.rstrip('/')}/{(endpoint or '').lstrip('/')}"
-
-    @staticmethod
-    def _present(event_data):
-        if isinstance(event_data, str):
-            with contextlib.suppress(json.JSONDecodeError):
-                event_data = json.loads(event_data)
-        return event_data
 
     def _create_server_error(self, event_data):
         prefix = "Overlord"
@@ -130,7 +131,7 @@ class _Client:
         for event_type, event_data in self._parse_sse(response):
             if event_type == "error":
                 raise self._create_server_error(event_data)
-            yield self._present(event_data)
+            yield event_data
 
     # ---
 
@@ -215,22 +216,23 @@ class ChatRequest(BaseModel):
 
 class Chat:
     def __init__(self, overlord):
-        self.overlord = overlord
-        self.session_id = str(uuid.uuid4())
+        self._overlord = overlord
+        self._endpoint = "ai/chat"
+        self._session_id = f"overlord_{uuid.uuid4()}"
         self._message_history: list[dict] = []
         self._active_lf_prompt_config = None
 
     def _handle_lf_prompt_config(self, prompt_data):
-        prompt_config = self.overlord.pm.prepare_prompt(**prompt_data)
+        prompt_config = self._overlord._pm.prepare_prompt(**prompt_data)
 
         if prompt_config != self._active_lf_prompt_config:
             self._active_lf_prompt_config = prompt_config
             return True
 
-    def request(self, chat_input: ChatInput, endpoint: str = "langfuse/chat"):
-        prompt_data = chat_input.prompt
-        file_urls = chat_input.file_urls
-        custom_metadata = chat_input.metadata
+    def request(self, input_data: ChatInput):
+        prompt_data = input_data.prompt
+        file_urls = input_data.file_urls
+        custom_metadata = input_data.metadata
 
         is_new_lf_prompt = False
         if isinstance(prompt_data, dict):
@@ -240,24 +242,45 @@ class Chat:
             lf_prompt_config=self._active_lf_prompt_config,
             is_new_lf_prompt=is_new_lf_prompt,
             text_prompt=None if is_new_lf_prompt else prompt_data,
-            message_history=self._message_history or [],
+            message_history=self._message_history,
             file_urls=file_urls,
-            metadata={"session_id": self.session_id, **({"custom": custom_metadata} if custom_metadata else {})},
+            metadata=dict(session_id=self._session_id, **(dict(custom=custom_metadata) if custom_metadata else {})),
         )
 
-        response = next(self.overlord.client.request(endpoint, "POST", chat_request.model_dump()))
+        response = next(self._overlord._client.request(self._endpoint, "POST", chat_request.model_dump()))
         self._message_history = response
-        last_reply = self.overlord.client._present(response[-1]["content"])
-        return last_reply
+        reply = response[-1]["content"]
+        return loads_if_json(reply)
 
 
 # ---
 
 
 class Overlord:
+    """
+    Full interface to the Overlord Server.
+
+    ### Usage:
+
+    ```python
+    # init
+    overlord = Overlord("http://your-server-url", "your-api-key", "your-langfuse-project")
+
+    # 1. runtime persistant chat
+    chat = overlord.chat()
+
+    data = overlord.input(...)
+    response = chat.request(data)
+
+    # 2. single request
+    data = overlord.input(...)
+    response = overlord.chat().request(data)
+    ```
+    """
+
     def __init__(self, server, api_key, project):
-        self.client = _Client(server, api_key)
-        self.pm = _PromptManager(project)
+        self._client = _Client(server, api_key)
+        self._pm = _PromptManager(project)
         self.input = ChatInput
 
     def chat(self):
