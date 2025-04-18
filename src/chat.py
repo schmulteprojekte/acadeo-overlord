@@ -11,6 +11,7 @@ class ChatRequest(BaseModel):
     message_history: list[dict] = []
     # ---
     file_urls: list[str] = []
+    json_schema: dict | None = None
     metadata: dict
 
 
@@ -42,7 +43,7 @@ def handle_messages(
     is_new_lf_prompt,
     text_prompt,
     file_urls,
-) -> list[dict]:
+) -> dict[str, list[dict] | dict]:
 
     if is_new_lf_prompt:
         messages = lf_prompt.compile(**(lf_prompt_config.placeholders or {}))
@@ -71,6 +72,7 @@ async def call(data: ChatRequest) -> list[dict]:
     text_prompt = data.text_prompt
     message_history = data.message_history
     file_urls = data.file_urls
+    json_schema = data.json_schema
     metadata = data.metadata
 
     # --- GET PARAMS FROM LAST LANGFUSE PROMPT PROVIDED
@@ -84,11 +86,14 @@ async def call(data: ChatRequest) -> list[dict]:
     # includes session id (and custom metadata if provided)
     params["metadata"] = metadata
 
-    # pop json schema from params and turn into model
-    schema = params.pop("json_schema", None)
+    # get json schema from data or pop from params and turn into pydantic for structured response
+    schema = json_schema or params.pop("json_schema", None)
+    if schema:
+        params["response_format"] = handle_response_format(schema)
 
     # ---
 
+    # build litellm standardized prompt message history
     message_history += handle_messages(
         params,
         lf_prompt,
@@ -97,18 +102,13 @@ async def call(data: ChatRequest) -> list[dict]:
         text_prompt,
         file_urls,
     )
-
     message_history = filter_system_prompts(message_history)
-
-    # build litellm standardized prompt message history
     params["messages"] = message_history
-
-    # convert json schema to structured response format
-    if schema:
-        params["response_format"] = handle_response_format(schema)
 
     # ---
 
     response = await litellm.call(**params)
     message_history.append(dict(role="assistant", content=response))
-    return message_history
+
+    # must return schema to keep the one from initial lf prompt throughout
+    return dict(messages=message_history, schema=schema)

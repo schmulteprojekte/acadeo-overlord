@@ -211,6 +211,7 @@ class ChatRequest(BaseModel):
     message_history: list[dict] = []
     # ---
     file_urls: list[str] = []
+    json_schema: dict | None = None
     metadata: dict
 
 
@@ -219,15 +220,17 @@ class Chat:
         self._overlord = overlord
         self._endpoint = "ai/chat"
         self._session_id = f"overlord_{uuid.uuid4()}"
-        self._message_history: list[dict] = []
+        self._message_history = []
+        self._initial_json_schema = None
         self._active_lf_prompt_config = None
 
-    def _handle_lf_prompt_config(self, prompt_data):
+    def _handle_lf_prompt_config(self, prompt_data) -> bool:
         prompt_config = self._overlord._pm.prepare_prompt(**prompt_data)
 
         if prompt_config != self._active_lf_prompt_config:
             self._active_lf_prompt_config = prompt_config
             return True
+        return False
 
     def request(self, input_data: ChatInput):
         prompt_data = input_data.prompt
@@ -241,15 +244,25 @@ class Chat:
         chat_request = ChatRequest(
             lf_prompt_config=self._active_lf_prompt_config,
             is_new_lf_prompt=is_new_lf_prompt,
-            text_prompt=None if is_new_lf_prompt else prompt_data,
+            text_prompt=None if isinstance(prompt_data, dict) else prompt_data,
             message_history=self._message_history,
             file_urls=file_urls,
+            json_schema=self._initial_json_schema,
             metadata=dict(session_id=self._session_id, **(dict(custom=custom_metadata) if custom_metadata else {})),
         )
 
-        response = next(self._overlord._client.request(self._endpoint, "POST", chat_request.model_dump()))
-        self._message_history = response
-        reply = response[-1]["content"]
+        try:
+            response = next(self._overlord._client.request(self._endpoint, "POST", chat_request.model_dump()))
+        except:
+            self._active_lf_prompt_config = None
+            raise
+
+        # only set json schema from first lf prompt
+        if not self._message_history:
+            self._initial_json_schema = response["schema"]
+
+        self._message_history = response["messages"]
+        reply = response["messages"][-1]["content"]
         return loads_if_json(reply)
 
 
