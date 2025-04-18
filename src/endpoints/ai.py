@@ -1,16 +1,15 @@
 from fastapi import APIRouter
-from fastapi.concurrency import run_in_threadpool
 
 from src.security import auth
 from src.core import sse
-from src.services import langfuse, litellm
+
+from src.chat import ChatRequest, call
 
 
-router = APIRouter(prefix="/langfuse")
+router = APIRouter(prefix="/ai")
 
 
-@router.post("/litellm", dependencies=[auth.via_api_key])
+@router.post("/chat", dependencies=[auth.via_api_key])
 @sse.endpoint
-async def langfuse_litellm(request: langfuse.PromptConfig):
-    func, args = langfuse.track(litellm.call), request
-    return await func(args)
+async def chat(request: ChatRequest):
+    return await call(request)
