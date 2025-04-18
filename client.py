@@ -243,7 +243,7 @@ class Chat:
             is_new_lf_prompt = self._handle_lf_prompt_config(prompt_data)
 
         chat_request = ChatRequest(
-            lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,
+            lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,  # fallback to first lf prompt
             is_new_lf_prompt=is_new_lf_prompt,
             text_prompt=None if isinstance(prompt_data, dict) else prompt_data,
             message_history=self._message_history,
@@ -255,7 +255,7 @@ class Chat:
         try:
             response = next(self._overlord._client.request(self._endpoint, "POST", chat_request.model_dump()))
         except:
-            self._active_lf_prompt_config = None
+            self._active_lf_prompt_config = None  # reset for clean retry
             raise
 
         # only set json schema from first lf prompt
