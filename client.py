@@ -221,6 +221,7 @@ class Chat:
         self._endpoint = "ai/chat"
         self._session_id = f"overlord_{uuid.uuid4()}"
         self._message_history = []
+        self._initial_lf_prompt_config = None
         self._initial_json_schema = None
         self._active_lf_prompt_config = None
 
@@ -242,7 +243,7 @@ class Chat:
             is_new_lf_prompt = self._handle_lf_prompt_config(prompt_data)
 
         chat_request = ChatRequest(
-            lf_prompt_config=self._active_lf_prompt_config,
+            lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,
             is_new_lf_prompt=is_new_lf_prompt,
             text_prompt=None if isinstance(prompt_data, dict) else prompt_data,
             message_history=self._message_history,
@@ -259,6 +260,7 @@ class Chat:
 
         # only set json schema from first lf prompt
         if not self._message_history:
+            self._initial_lf_prompt_config = self._active_lf_prompt_config
             self._initial_json_schema = response["schema"]
 
         self._message_history = response["messages"]
