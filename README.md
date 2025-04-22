@@ -10,13 +10,6 @@
 
 ## Setup
 
-### Secrets
-
-```env
-OVERLORD_API_KEY="your-api-key"
-OVERLORD_SERVER_URL="https://the-server.url"
-```
-
 ### Installation
 
 Copy `client.py` to your cwd
@@ -112,5 +105,5 @@ response = chat.request(data)
 ```
 
 ## Notes
-- the initally provided json schema from the first Langfuse prompt is used throughout a chat
 - every chat will have its own session id used to connect messages in the Langfuse UI
+- the initally provided system prompt json schema from the first Langfuse prompt is used throughout a chat
