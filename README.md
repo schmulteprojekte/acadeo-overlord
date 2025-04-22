@@ -15,9 +15,6 @@
 ```env
 OVERLORD_API_KEY="your-api-key"
 OVERLORD_SERVER_URL="https://the-server.url"
-
-LANGFUSE_PUBLIC_KEY="your-api-key"
-LANGFUSE_SECRET_KEY="your-api-key"
 ```
 
 ### Installation
@@ -26,22 +23,19 @@ Copy `client.py` to your cwd
 
 Rename to `overlordapi.py`
 
-Run `pip install requests pydantic langfuse`
+Run `pip install requests pydantic`
 
 ## Usage
 
 ```python
 from overlordapi import Overlord
 
+
 overlord = Overlord("http://your-server.url", "your-api-key", "your-langfuse-project")
 
 # health check (optional)
 print(overlord.client.ping().text)
 ```
-
-### Create Langfuse prompt
-
-
 
 ### Input
 
@@ -70,8 +64,8 @@ class PromptArgs(BaseModel):
 
 class PromptConfig(BaseModel):
     args: PromptArgs
-    project: str  # this is set internally in the PromptManager and can be ignored
     placeholders: dict = {}  # optional
+    _project: str  # this is used internally and can be ignored
 ```
 
 ```python
