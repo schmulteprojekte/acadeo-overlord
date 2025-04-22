@@ -217,16 +217,16 @@ class ChatRequest(BaseModel):
 
 class Chat:
     def __init__(self, overlord):
+        self.session_id = f"overlord_{uuid.uuid4()}"
         self._overlord = overlord
         self._endpoint = "ai/chat"
-        self._session_id = f"overlord_{uuid.uuid4()}"
         self._message_history = []
         self._initial_lf_prompt_config = None
         self._initial_json_schema = None
         self._active_lf_prompt_config = None
 
     def _handle_lf_prompt_config(self, prompt_data) -> bool:
-        prompt_config = self._overlord._pm.prepare_prompt(**prompt_data)
+        prompt_config = self._overlord.pm.prepare_prompt(**prompt_data)
 
         if prompt_config != self._active_lf_prompt_config:
             self._active_lf_prompt_config = prompt_config
@@ -251,11 +251,11 @@ class Chat:
             message_history=self._message_history,
             file_urls=file_urls,
             json_schema=self._initial_json_schema,
-            metadata=dict(session_id=self._session_id, **(dict(custom=custom_metadata) if custom_metadata else {})),
+            metadata=dict(session_id=self.session_id, **(dict(custom=custom_metadata) if custom_metadata else {})),
         )
 
         try:
-            response = next(self._overlord._client.request(self._endpoint, "POST", chat_request.model_dump()))
+            response = next(self._overlord.client.request(self._endpoint, "POST", chat_request.model_dump()))
         except:
             self._active_lf_prompt_config = None  # reset for clean retry
             raise
@@ -282,8 +282,14 @@ class Overlord:
     # init
     overlord = Overlord("http://your-server-url", "your-api-key", "your-langfuse-project")
 
+    # health check (optional)
+    print(overlord.client.ping().text)
+
     # 1. runtime persistant chat
     chat = overlord.chat()
+
+    # check session id (optional)
+    print(chat.session_id)
 
     data = overlord.input(...)
     response = chat.request(data)
@@ -295,8 +301,8 @@ class Overlord:
     """
 
     def __init__(self, server, api_key, project):
-        self._client = _Client(server, api_key)
-        self._pm = _PromptManager(project)
+        self.client = _Client(server, api_key)
+        self.pm = _PromptManager(project)
         self.input = ChatInput
 
     def chat(self):
