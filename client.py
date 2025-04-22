@@ -20,8 +20,8 @@ class PromptArgs(BaseModel):
 
 class PromptConfig(BaseModel):
     args: PromptArgs
-    project: str
     placeholders: dict = {}
+    _project: str
 
 
 def prepare_prompt(project, args, placeholders=[]) -> PromptConfig:
@@ -31,7 +31,7 @@ def prepare_prompt(project, args, placeholders=[]) -> PromptConfig:
             label=args["label"],
             version=args.get("version"),
         ),
-        project=project,
+        _project=project,
     )
 
     if placeholders:
