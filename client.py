@@ -12,7 +12,7 @@ def loads_if_json(data):
 
 class PromptArgs(BaseModel):
     name: str
-    label: str
+    label: str | None = None
     version: str | None = None
 
 
@@ -26,7 +26,7 @@ def prepare_prompt(project, args, placeholders=[]) -> PromptConfig:
     prompt_config = PromptConfig(
         args=PromptArgs(
             name=args["name"],
-            label=args["label"],
+            label=args.get("label"),
             version=args.get("version"),
         ),
         project=project,

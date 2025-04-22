@@ -12,7 +12,7 @@ import os
 
 class PromptArgs(BaseModel):
     name: str
-    label: str
+    label: str | None = None
     version: str | None = None
 
 
