@@ -19,7 +19,7 @@ class PromptArgs(BaseModel):
 class PromptConfig(BaseModel):
     args: PromptArgs
     placeholders: dict = {}
-    _project: str
+    project: str
 
 
 # HELPER
@@ -44,5 +44,5 @@ class ClientManager:
 
 
 async def fetch_prompt(prompt_config: PromptConfig) -> PromptClient:
-    lf = ClientManager.get_client(prompt_config._project)
+    lf = ClientManager.get_client(prompt_config.project)
     return await run_in_threadpool(lf.get_prompt, **prompt_config.args.model_dump())

@@ -65,7 +65,7 @@ class PromptArgs(BaseModel):
 class PromptConfig(BaseModel):
     args: PromptArgs
     placeholders: dict = {}  # optional
-    _project: str  # this is used internally and can be ignored
+    project: str  # this is used internally and can be ignored
 ```
 
 ```python

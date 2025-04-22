@@ -21,7 +21,7 @@ class PromptArgs(BaseModel):
 class PromptConfig(BaseModel):
     args: PromptArgs
     placeholders: dict = {}
-    _project: str
+    project: str
 
 
 def prepare_prompt(project, args, placeholders=[]) -> PromptConfig:
@@ -31,7 +31,7 @@ def prepare_prompt(project, args, placeholders=[]) -> PromptConfig:
             label=args["label"],
             version=args.get("version"),
         ),
-        _project=project,
+        project=project,
     )
 
     if placeholders:
@@ -191,7 +191,7 @@ class Chat:
         self._active_lf_prompt_config = None
 
     def _handle_lf_prompt_config(self, prompt_data) -> bool:
-        prompt_config = prepare_prompt(self._overlord._project, **prompt_data)
+        prompt_config = prepare_prompt(self._overlord.project, **prompt_data)
 
         if prompt_config != self._active_lf_prompt_config:
             self._active_lf_prompt_config = prompt_config
@@ -268,7 +268,7 @@ class Overlord:
     def __init__(self, server, api_key, project):
         self.client = _Client(server, api_key)
         self.input = ChatInput
-        self._project = project
+        self.project = project
 
     def chat(self):
         return Chat(self)
