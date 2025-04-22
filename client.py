@@ -241,6 +241,8 @@ class Chat:
         is_new_lf_prompt = False
         if isinstance(prompt_data, dict):
             is_new_lf_prompt = self._handle_lf_prompt_config(prompt_data)
+        elif not self._active_lf_prompt_config:
+            raise ValueError("Chat must be initialized with a Langfuse prompt config!")
 
         chat_request = ChatRequest(
             lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,  # fallback to first lf prompt
@@ -258,7 +260,6 @@ class Chat:
             self._active_lf_prompt_config = None  # reset for clean retry
             raise
 
-        # only set json schema from first lf prompt
         if not self._message_history:
             self._initial_lf_prompt_config = self._active_lf_prompt_config
             self._initial_json_schema = response["schema"]
