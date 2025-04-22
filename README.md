@@ -39,6 +39,10 @@ overlord = Overlord("http://your-server.url", "your-api-key", "your-langfuse-pro
 print(overlord.client.ping().text)
 ```
 
+### Create Langfuse prompt
+
+
+
 ### Input
 
 The API can be called with either a prompt from Langfuse or a simple text prompt.
@@ -100,7 +104,7 @@ data = overlord.input(prompt="What did we just look at?")
 
 #### Single task
 ```python
-response = overlord.chat().request(data)
+response = overlord.task(data)
 ```
 
 #### Persistant chat

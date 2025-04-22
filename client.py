@@ -296,7 +296,7 @@ class Overlord:
 
     # 2. single request
     data = overlord.input(...)
-    response = overlord.chat().request(data)
+    response = overlord.task(data)
     ```
     """
 
@@ -307,3 +307,6 @@ class Overlord:
 
     def chat(self):
         return Chat(self)
+
+    def task(self, data):
+        return self.chat().request(data)
