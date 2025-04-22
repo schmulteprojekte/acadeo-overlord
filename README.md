@@ -6,7 +6,47 @@
 
 ---
 
-# Client
+# 🤖 Server
+
+## Setup
+
+### Secrets
+
+```env
+APP_NAME="my-overlord"
+ACCESS_KEYS='["example-secret-key-one", "example-secret-key-two", "example-secret-key-three"]'
+ALLOWED_ORIGINS='["https://www.example.com/"]'
+RATE_LIMITS='["1/second", "10/minute", "100/day"]'
+
+# various langfuse project keys
+LANGFUSE_SECRET_KEY_PROJECT="your-langfuse-secret-key-with-the-project-name"
+LANGFUSE_PUBLIC_KEY_PROJECT="your-langfuse-public-key-with-the-project-name"
+
+# various ai provider api keys
+OPENAI_API_KEY="your-openai-api-key"
+ANTHROPIC_API_KEY="your-anthropic-api-key"
+GEMINI_API_KEY="your-gemini-api-key"
+```
+
+### Deployment
+
+#### Local
+
+`pip install -r requirements.txt`
+
+`uvicorn main:app --no-access-log`
+
+#### Cloud
+
+Simply utilize the `Dockerfile` to automatically install all dependencies.
+
+### Usage
+
+Currently there only is a Python client available for server to server communication.
+
+The Overlord API is based on server-sent events (SSE), meaning by simply sending requests to the `ai/chat` endpoint and parsing SSE one could access the API easily and build their own client for front-end usage in e.g. JavaScript etc.
+
+# 😊 Client
 
 ## Setup
 
