@@ -34,6 +34,9 @@ Run `pip install requests pydantic langfuse`
 from overlordapi import Overlord
 
 overlord = Overlord("http://your-server.url", "your-api-key", "your-langfuse-project")
+
+# health check (optional)
+print(overlord.client.ping().text)
 ```
 
 ### Input
@@ -98,6 +101,10 @@ data = overlord.input(prompt="What did we just look at?")
 #### Persistant chat
 ```python
 chat = overlord.chat()
+
+# check session id (optional)
+print(chat.session_id)
+
 response = chat.request(data)
 ```
 
