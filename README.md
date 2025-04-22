@@ -94,7 +94,7 @@ data = overlord.input(prompt="What did we just look at?")
 response = overlord.task(data)
 ```
 
-#### Persistant chat
+#### Persistent chat
 ```python
 chat = overlord.chat()
 
