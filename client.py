@@ -12,9 +12,6 @@ def loads_if_json(data):
     return data
 
 
-# ---
-
-
 class PromptArgs(BaseModel):
     name: str
     label: str
@@ -27,52 +24,20 @@ class PromptConfig(BaseModel):
     placeholders: dict = {}
 
 
-class _PromptManager:
-    def __init__(self, project: str):
-        self.project = project
-        self._lf = self._setup_client(project)
+def prepare_prompt(project, args, placeholders=[]) -> PromptConfig:
+    prompt_config = PromptConfig(
+        args=PromptArgs(
+            name=args["name"],
+            label=args["label"],
+            version=args.get("version"),
+        ),
+        project=project,
+    )
 
-    @staticmethod
-    def _setup_client(project):
-        os.environ["LANGFUSE_PUBLIC_KEY"] = os.getenv(f"LANGFUSE_PUBLIC_KEY_{project.upper()}")
-        os.environ["LANGFUSE_SECRET_KEY"] = os.getenv(f"LANGFUSE_SECRET_KEY_{project.upper()}")
-        return Langfuse()
+    if placeholders:
+        prompt_config.placeholders = placeholders
 
-    def create_prompt(
-        self,
-        name,
-        messages: list[dict],
-        *,
-        labels: list[str] = None,
-        tags: list[str] = None,
-        prompt_type: Literal["text", "chat"] = None,
-        commit_msg: str = None,
-        config: dict = None,
-    ):
-        return self._lf.create_prompt(
-            name=name,
-            prompt=messages,
-            labels=labels or [],
-            tags=tags,
-            type=prompt_type or "chat",
-            config=config,
-            commit_message=commit_msg,
-        )
-
-    def prepare_prompt(self, args, placeholders=[]) -> PromptConfig:
-        prompt_config = PromptConfig(
-            args=PromptArgs(
-                name=args["name"],
-                label=args["label"],
-                version=args.get("version"),
-            ),
-            project=self.project,
-        )
-
-        if placeholders:
-            prompt_config.placeholders = placeholders
-
-        return prompt_config
+    return prompt_config
 
 
 # ---
@@ -226,7 +191,7 @@ class Chat:
         self._active_lf_prompt_config = None
 
     def _handle_lf_prompt_config(self, prompt_data) -> bool:
-        prompt_config = self._overlord.pm.prepare_prompt(**prompt_data)
+        prompt_config = prepare_prompt(self._overlord._project, **prompt_data)
 
         if prompt_config != self._active_lf_prompt_config:
             self._active_lf_prompt_config = prompt_config
@@ -302,8 +267,8 @@ class Overlord:
 
     def __init__(self, server, api_key, project):
         self.client = _Client(server, api_key)
-        self.pm = _PromptManager(project)
         self.input = ChatInput
+        self._project = project
 
     def chat(self):
         return Chat(self)
