@@ -98,6 +98,11 @@ data = overlord.input(prompt="What did we just look at?")
 
 ### Request
 
+#### Single task
+```python
+response = overlord.chat().request(data)
+```
+
 #### Persistant chat
 ```python
 chat = overlord.chat()
@@ -106,11 +111,6 @@ chat = overlord.chat()
 print(chat.session_id)
 
 response = chat.request(data)
-```
-
-#### Single task
-```python
-response = overlord.chat().request(data)
 ```
 
 ## Notes
