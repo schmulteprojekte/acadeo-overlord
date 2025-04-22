@@ -14,21 +14,26 @@
 
 ```env
 OVERLORD_API_KEY="your-api-key"
+OVERLORD_SERVER_URL="https://the-server.url"
+
 LANGFUSE_PUBLIC_KEY="your-api-key"
 LANGFUSE_SECRET_KEY="your-api-key"
 ```
 
 ### Installation
 
-Copy `client.py` to your project directory.
-Rename the file to: `overlordapi.py`
+Copy `client.py` to your cwd
+
+Rename to `overlordapi.py`
+
+Run `pip install requests pydantic langfuse`
 
 ## Usage
 
 ```python
 from overlordapi import Overlord
 
-overlord = Overlord("http://your-server-url", "your-api-key", "your-langfuse-project")
+overlord = Overlord("http://your-server.url", "your-api-key", "your-langfuse-project")
 ```
 
 ### Input
