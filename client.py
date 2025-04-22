@@ -1,8 +1,6 @@
-import requests, json, contextlib, os, uuid
+import requests, json, contextlib, uuid
 from typing import Literal, Generator
 from pydantic import BaseModel
-
-from langfuse import Langfuse
 
 
 def loads_if_json(data):
