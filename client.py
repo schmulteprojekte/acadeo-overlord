@@ -178,7 +178,7 @@ class ChatRequest(BaseModel):
     metadata: dict
 
 
-class Chat:
+class _Chat:
     def __init__(self, overlord):
         self.session_id = f"overlord_{uuid.uuid4()}"
         self._overlord = overlord
@@ -205,7 +205,7 @@ class Chat:
         if isinstance(prompt_data, dict):
             is_new_lf_prompt = self._handle_lf_prompt_config(prompt_data)
         elif not self._active_lf_prompt_config:
-            raise ValueError("Chat must be initialized with a Langfuse prompt config!")
+            raise ValueError("A chat must be initialized with a Langfuse prompt config!")
 
         chat_request = ChatRequest(
             lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,  # fallback to first lf prompt
@@ -269,7 +269,7 @@ class Overlord:
         self.project = project
 
     def chat(self):
-        return Chat(self)
+        return _Chat(self)
 
     def task(self, data):
         chat = self.chat()
