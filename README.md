@@ -22,7 +22,7 @@
     - [Request](#request)
   - [Notes](#notes)
 
----
+&nbsp;
 
 # 🤖 Server
 
