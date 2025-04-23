@@ -272,4 +272,6 @@ class Overlord:
         return Chat(self)
 
     def task(self, data):
-        return self.chat().request(data)
+        chat = self.chat()
+        chat.session_id = None
+        return chat.request(data)
