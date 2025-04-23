@@ -6,6 +6,24 @@
 
 ---
 
+> FastAPI integrating LiteLLM's flexibility with Langfuse's prompt management.
+
+# Table of Contents
+- [Server](#🤖-server)
+  - [Setup](#setup)
+    - [Secrets](#secrets)
+    - [Deployment](#deployment)
+  - [Usage](#usage)
+- [Client](#😊-client)
+  - [Setup](#setup-1)
+    - [Installation](#installation)
+  - [Usage](#usage-1)
+    - [Input](#input)
+    - [Request](#request)
+  - [Notes](#notes)
+
+---
+
 # 🤖 Server
 
 ## Setup
@@ -127,7 +145,7 @@ As mentioned earlier the chat can be continued with a simple text prompt but mus
 data = overlord.input(prompt="What did we just look at?")
 ```
 
-### Request
+### Requests
 
 #### Single task
 ```python
