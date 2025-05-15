@@ -71,8 +71,7 @@ class _Client:
         return f"{self._server.rstrip('/')}/{(endpoint or '').lstrip('/')}"
 
     def _create_server_error(self, event_data):
-        prefix = "Overlord"
-        error_type = f"{prefix}_{event_data['type']}"
+        error_type = event_data["type"]
         ErrorClass = type(error_type, (Exception,), {})
         return ErrorClass(event_data["message"])
 
