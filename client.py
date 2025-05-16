@@ -173,7 +173,7 @@ class ChatRequest(BaseModel):
     message_history: list[dict] = None
     # ---
     file_urls: list[str] = None
-    json_schema: dict | None = None
+    output_schema: str | None = None
     metadata: dict
 
 
@@ -184,7 +184,7 @@ class _Chat:
         self._endpoint = "ai/chat"
         self._message_history = []
         self._initial_lf_prompt_config = None
-        self._initial_json_schema = None
+        self._initial_output_schema = None
         self._active_lf_prompt_config = None
 
     def _handle_lf_prompt_config(self, prompt_data) -> bool:
@@ -212,7 +212,7 @@ class _Chat:
             text_prompt=None if isinstance(prompt_data, dict) else prompt_data,
             message_history=self._message_history,
             file_urls=file_urls,
-            json_schema=self._initial_json_schema,
+            output_schema=self._initial_output_schema,
             metadata=dict(session_id=self.session_id, **(dict(custom=custom_metadata) if custom_metadata else {})),
         )
 
@@ -224,7 +224,7 @@ class _Chat:
 
         if not self._message_history:
             self._initial_lf_prompt_config = self._active_lf_prompt_config
-            self._initial_json_schema = response["schema"]
+            self._initial_output_schema = response["schema"]
 
         self._message_history = response["messages"]
         reply = response["messages"][-1]["content"]

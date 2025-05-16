@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from src.utils.schema_to_model import transform
+from src.utils.to_model import transform
 from src.services import langfuse, litellm
 
 
@@ -11,18 +11,18 @@ class ChatRequest(BaseModel):
     message_history: list[dict] = None
     # ---
     file_urls: list[str] = None
-    json_schema: dict | None = None
+    output_schema: str | None = None
     metadata: dict
 
 
-def handle_response_format(json_schema):
-    if isinstance(json_schema, dict):
-        response_format: BaseModel = transform(json_schema)
-        return response_format
+def handle_response_format(output_schema):
+    if isinstance(output_schema, str):
+        response_format: type[BaseModel] | None = transform(output_schema)
 
-    elif isinstance(json_schema, str):
-        # return {"type", "json_object"}
-        raise Exception("Json mode is not supported! Please use structured responses instead.")
+        if response_format and issubclass(response_format, BaseModel):
+            return response_format
+
+        raise Exception("Schema could not be parsed into a pydantic BaseModel!")
 
 
 def _handle_multimodal_messages(prompt, urls):
@@ -72,7 +72,7 @@ async def call(data: ChatRequest) -> list[dict]:
     text_prompt = data.text_prompt
     message_history = data.message_history
     file_urls = data.file_urls
-    json_schema = data.json_schema
+    output_schema = data.output_schema
     metadata = data.metadata
 
     # --- GET PARAMS FROM LAST LANGFUSE PROMPT PROVIDED
@@ -87,7 +87,7 @@ async def call(data: ChatRequest) -> list[dict]:
     params["metadata"] = metadata
 
     # get json schema from data or pop from params and turn into pydantic for structured response
-    schema = json_schema or params.pop("json_schema", None)
+    schema = output_schema or params.pop("output_schema", None)
     if schema:
         params["response_format"] = handle_response_format(schema)
 
