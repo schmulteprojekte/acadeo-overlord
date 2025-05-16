@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from src.utils.to_model import transform
+from src.utils import pydantic_parser
 from src.services import langfuse, litellm
 
 
@@ -17,7 +17,7 @@ class ChatRequest(BaseModel):
 
 def handle_response_format(output_schema):
     if isinstance(output_schema, str):
-        response_format: type[BaseModel] | None = transform(output_schema)
+        response_format: type[BaseModel] | None = pydantic_parser.transform(output_schema)
 
         if response_format and issubclass(response_format, BaseModel):
             return response_format
