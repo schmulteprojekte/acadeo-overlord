@@ -54,7 +54,7 @@ def _extract_defined_pydantic_models(execution_scope) -> list:
     return models
 
 
-def transform(model_definitions_string: str) -> type[BaseModel]:
+def transform(model_definitions_string: str) -> type[BaseModel] | None:
     """
     Dynamically executes a string containing Pydantic model definitions and
     returns the class of the last model defined or raises ValueError if the
