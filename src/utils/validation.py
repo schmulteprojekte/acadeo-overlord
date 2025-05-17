@@ -198,8 +198,7 @@ class PatternValidator:
         """Validate the model string contains no dangerous patterns."""
 
         for pattern in cls.DANGERS.patterns:
-            contains_danger = pattern in model_string
-            if contains_danger:
+            if pattern in model_string:
                 return False
         return True
 
