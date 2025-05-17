@@ -15,16 +15,6 @@ class ChatRequest(BaseModel):
     metadata: dict
 
 
-def handle_response_format(output_schema):
-    if isinstance(output_schema, str):
-        response_format: type[BaseModel] | None = pydantic_parser.transform(output_schema, BaseModel)
-
-        if response_format and issubclass(response_format, BaseModel):
-            return response_format
-
-        raise Exception("Schema could not be parsed into a pydantic BaseModel!")
-
-
 def _handle_multimodal_messages(prompt, urls):
     for message in prompt:
         if message["role"] == "user":
@@ -88,8 +78,9 @@ async def call(data: ChatRequest) -> list[dict]:
 
     # get json schema from data or pop from params and turn into pydantic for structured response
     schema = output_schema or params.pop("output_schema", None)
-    if schema:
-        params["response_format"] = handle_response_format(schema)
+
+    if isinstance(schema, str) and schema.strip():
+        params["response_format"] = pydantic_parser.parse(schema, BaseModel, 10)
 
     # ---
 

@@ -59,7 +59,11 @@ def _extract_defined_pydantic_models(execution_scope, model_class: type = BaseMo
     return models
 
 
-def transform(model_definitions_string: str, model_class: type = BaseModel, definition_limit: int = 10) -> type | None:
+class ParsingError(Exception):
+    "Raised if parsing failed due to any reason."
+
+
+def parse(model_definitions_string: str, model_class: type = BaseModel, definition_limit: int = 10) -> type | None:
     """
     Dynamically executes a string containing model definitions and
     returns the class of the last model defined or raises ValueError if the
@@ -89,5 +93,9 @@ def transform(model_definitions_string: str, model_class: type = BaseModel, defi
     # filter only for models that inherit from the specified model class
     models = _extract_defined_pydantic_models(execution_scope, model_class)
 
-    # output last model as it would have internalized others
-    return models[-1] if models else None
+    # get last model as it would have internalized others
+    model = models[-1] if models else None
+
+    if not model:
+        raise ParsingError(f"No valid {model_class.__name__} found in the provided definitions!")
+    return model
