@@ -17,7 +17,7 @@ class ChatRequest(BaseModel):
 
 def handle_response_format(output_schema):
     if isinstance(output_schema, str):
-        response_format: type[BaseModel] | None = pydantic_parser.transform(output_schema)
+        response_format: type[BaseModel] | None = pydantic_parser.transform(output_schema, BaseModel)
 
         if response_format and issubclass(response_format, BaseModel):
             return response_format
