@@ -54,17 +54,17 @@ class AbstractSyntaxTreeValidator:
         if not isinstance(child, ast.Attribute):
             return False
 
-        # Block direct module access (os.system)
+        # block direct module access (os.system)
         if isinstance(child.value, ast.Name):
             if child.value.id in cls.DANGERS.modules:
                 return True
 
-        # Block dangerous dunders and attributes that can be used for sandbox escape
+        # block dangerous dunders and attributes that can be used for sandbox escape
         is_dangerous_attr = child.attr in cls.DANGERS.attributes
         if is_dangerous_attr:
             return True
 
-        # Block chained attribute access that might be sandbox escapes
+        # block chained attribute access that might be sandbox escapes
         # like obj.__class__.__bases__[0].__subclasses__()
         if isinstance(child.value, ast.Attribute):
             is_dangerous_chain = child.value.attr in cls.DANGERS.attributes
@@ -78,11 +78,11 @@ class AbstractSyntaxTreeValidator:
         if not isinstance(child, ast.Call):
             return False
 
-        # Direct function calls like eval()
+        # direct function calls like eval()
         if isinstance(child.func, ast.Name):
             return child.func.id in cls.DANGERS.calls
 
-        # Method calls like obj.eval()
+        # method calls like obj.eval()
         if isinstance(child.func, ast.Attribute):
             return child.func.attr in cls.DANGERS.calls
 
@@ -109,10 +109,10 @@ class AbstractSyntaxTreeValidator:
     # --
 
     @staticmethod
-    def _does_inherit_correct_model(node, pydantic_model_type) -> bool:
+    def _does_inherit_correct_model(node, model_class) -> bool:
         has_bases = bool(node.bases)
-        inherits_basemodel = any(isinstance(base, ast.Name) and base.id == pydantic_model_type for base in node.bases)
-        return has_bases and inherits_basemodel
+        inherits_from_model_class = any(isinstance(base, ast.Name) and base.id == model_class.__name__ for base in node.bases)
+        return has_bases and inherits_from_model_class
 
     @staticmethod
     def _is_valid_class_name(node) -> bool:
@@ -133,7 +133,7 @@ class AbstractSyntaxTreeValidator:
     # --
 
     @classmethod
-    def validate(cls, model_string: str, correct_model: str, definition_limit: int) -> bool:
+    def validate(cls, definitions: str, model_class: type, definition_limit: int) -> bool:
         """
         Validate the model string contains only safe Pydantic model definitions using AST.
 
@@ -145,7 +145,7 @@ class AbstractSyntaxTreeValidator:
         """
 
         try:
-            tree = ast.parse(model_string)
+            tree = ast.parse(definitions)
 
             if not cls._has_too_many_definitions(tree, definition_limit):
                 return False
@@ -155,7 +155,7 @@ class AbstractSyntaxTreeValidator:
                     return False
                 if not cls._is_valid_class_name(node):
                     return False
-                if not cls._does_inherit_correct_model(node, correct_model):
+                if not cls._does_inherit_correct_model(node, model_class):
                     return False
                 if not cls._is_safe_class_body(node):
                     return False
@@ -163,7 +163,7 @@ class AbstractSyntaxTreeValidator:
             return True
 
         except SyntaxError:
-            # Not valid Python syntax
+            # not valid Python syntax
             return False
 
 
@@ -214,11 +214,11 @@ class ModelStringValidator:
     """
 
     @classmethod
-    def validate(cls, definitions: str, *, model_type: str = "BaseModel", definition_limit: int = 10):
+    def validate(cls, definitions: str, *, model_class: type = BaseModel, definition_limit: int = 10):
         "Validate that the provided string contains only safe Pydantic model definitions."
 
         if not PatternValidator.validate(definitions):
             raise ValidationError("Invalid or potentially unsafe pattern detected in model definition")
 
-        if not AbstractSyntaxTreeValidator.validate(definitions, model_type, definition_limit):
+        if not AbstractSyntaxTreeValidator.validate(definitions, model_class, definition_limit):
             raise ValidationError("Invalid or potentially unsafe code structure in model definition")

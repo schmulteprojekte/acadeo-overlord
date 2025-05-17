@@ -5,11 +5,11 @@ import inspect
 from src.utils.validation import ModelStringValidator
 
 
-def _build_safe_execution_scope() -> dict:
-    # scope to execute string with BaseModel already included
-    execution_scope = {"BaseModel": BaseModel}
+def _build_safe_execution_scope(model_class: type = BaseModel) -> dict:
+    # scope to execute string with the model class already included
+    execution_scope = {model_class.__name__: model_class}
 
-    # Only allow absolutely necessary builtins
+    # only allow absolutely necessary builtins
     execution_scope["__builtins__"] = {
         "__build_class__": __builtins__["__build_class__"],
         "__name__": "__main__",
@@ -25,7 +25,7 @@ def _build_safe_execution_scope() -> dict:
         "None": None,
     }
 
-    # Add common typing modules for convenience
+    # add common typing modules for convenience
     execution_scope.update(
         {
             "Literal": Literal,
@@ -40,41 +40,54 @@ def _build_safe_execution_scope() -> dict:
     return execution_scope
 
 
-def _extract_defined_pydantic_models(execution_scope) -> list:
+def _extract_defined_pydantic_models(execution_scope, model_class: type = BaseModel) -> list:
     models = []
 
     for obj in execution_scope.values():
         is_class = inspect.isclass(obj)
-        inherits_from_basemodel = issubclass(obj, BaseModel)
-        is_not_base_model = obj is not BaseModel
+        try:
+            inherits_from_model = issubclass(obj, model_class)
+            is_not_model_itself = obj is not model_class
 
-        if is_class and inherits_from_basemodel and is_not_base_model:
-            models.append(obj)
+            if is_class and inherits_from_model and is_not_model_itself:
+                models.append(obj)
+
+        except TypeError:
+            # skip non-class objects in the execution scope
+            continue
 
     return models
 
 
-def transform(model_definitions_string: str) -> type[BaseModel] | None:
+def transform(model_definitions_string: str, model_class: type = BaseModel, definition_limit: int = 10) -> type | None:
     """
-    Dynamically executes a string containing Pydantic model definitions and
+    Dynamically executes a string containing model definitions and
     returns the class of the last model defined or raises ValueError if the
     string contains potentially unsafe code.
+
+    Args:
+        model_definitions_string: String containing model definitions
+        model_class: The base model class to use (defaults to pydantic.BaseModel)
+        definition_limit: Maximum number of class definitions allowed
+
+    Returns:
+        The last defined model class or None if no models were defined
     """
 
     ModelStringValidator.validate(
         model_definitions_string,
-        model_type="BaseModel",
-        definition_limit=10,
+        model_class=model_class,
+        definition_limit=definition_limit,
     )
 
     # build a minimal environment for the string to execute in
-    execution_scope = _build_safe_execution_scope()
+    execution_scope = _build_safe_execution_scope(model_class)
 
     # execute string inside safe scope
     exec(model_definitions_string, execution_scope, execution_scope)
 
-    # filter only for pydantic basemodels defined in string
-    models = _extract_defined_pydantic_models(execution_scope)
+    # filter only for models that inherit from the specified model class
+    models = _extract_defined_pydantic_models(execution_scope, model_class)
 
     # output last model as it would have internalized others
     return models[-1] if models else None
