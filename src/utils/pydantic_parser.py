@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Literal, List, Dict, Optional, Union, Any
 import inspect
 
-from src.utils.validation import Validator
+from src.utils.validation import ModelStringValidator
 
 
 def _build_safe_execution_scope() -> dict:
@@ -61,8 +61,11 @@ def transform(model_definitions_string: str) -> type[BaseModel] | None:
     string contains potentially unsafe code.
     """
 
-    # validate string using pattern matching and ast
-    Validator.validate(model_definitions_string)
+    ModelStringValidator.validate(
+        model_definitions_string,
+        model_type="BaseModel",
+        definition_limit=10,
+    )
 
     # build a minimal environment for the string to execute in
     execution_scope = _build_safe_execution_scope()
