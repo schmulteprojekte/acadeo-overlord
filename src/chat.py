@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from src.utils import pydantic_parser
+from src.utils import validation, parsing
 from src.services import langfuse, litellm
 
 
@@ -17,8 +17,14 @@ class ChatRequest(BaseModel):
 
 def _handle_structured_output(schema: str) -> type:
     if isinstance(schema, str) and schema.strip():
+        schema_model_class_type = BaseModel
+
+        # validate security of input code string
+        validation.StringValidator.validate(schema, schema_model_class_type, 10)
+
         # parse data model classes from definition in string for structured output response formats
-        pydantic_schemas: tuple[type, ...] = pydantic_parser.parse_models(schema, BaseModel, 10)
+        pydantic_schemas: tuple[type, ...] = parsing.PydanticParser.parse_models(schema, schema_model_class_type)
+
         # needs to be single schema which would use others internally
         return pydantic_schemas[-1]
 
