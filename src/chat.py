@@ -16,9 +16,13 @@ class ChatRequest(BaseModel):
 
 
 def _handle_structured_output(schema: str) -> type:
-    data_schemas: tuple[type, ...] = pydantic_parser.parse_models(schema, BaseModel, 10)
-    # needs to be single schema which would use the others internally
-    return data_schemas[-1]
+    if isinstance(schema, str) and schema.strip():
+        # parse data model classes from definition in string for structured output response formats
+        pydantic_schemas: tuple[type, ...] = pydantic_parser.parse_models(schema, BaseModel, 10)
+        # needs to be single schema which would use others internally
+        return pydantic_schemas[-1]
+
+    raise RuntimeError("Unexpected schema format.")
 
 
 def _handle_multimodal_messages(prompt, urls):
@@ -92,12 +96,10 @@ async def call(data: ChatRequest) -> dict:
     # includes session id (and custom metadata if provided)
     params["metadata"] = metadata
 
-    # get previously used json schema from data or a new one from prompt params and remove if exists
-    schema = output_schema or params.get("output_schema")
-    params.pop("output_schema", None)
-
-    # parse data model classes from definition in string for structured output response formats
-    if isinstance(schema, str) and schema.strip():
+    # get previously used output schema from data or a new one from prompt params and remove if exists
+    schema_kind = "pydantic_schema"
+    new_schema = params.pop(schema_kind, None)
+    if schema := output_schema or new_schema:
         params["response_format"] = _handle_structured_output(schema)
 
     # ---
