@@ -2,7 +2,7 @@ import ast
 from pydantic import BaseModel
 
 
-class Dangers(BaseModel):
+class _Dangers(BaseModel):
     """Container for dangerous operations and patterns."""
 
     calls: tuple[str, ...] = ()
@@ -11,10 +11,10 @@ class Dangers(BaseModel):
     patterns: tuple[str, ...] = ()
 
 
-class AbstractSyntaxTreeValidator:
+class _AbstractSyntaxTreeValidator:
     """Class for validating Python code safety using Abstract Syntax Tree analysis."""
 
-    DANGERS = Dangers(
+    DANGERS = _Dangers(
         calls=(
             "eval",
             "exec",
@@ -109,10 +109,17 @@ class AbstractSyntaxTreeValidator:
     # --
 
     @staticmethod
-    def _does_inherit_correct_model(node, model_class) -> bool:
+    def _uses_only_allowed_models(node, allowed_models: tuple[type, ...]) -> bool:
+        if not isinstance(allowed_models, tuple):
+            allowed_models = (allowed_models,)
+
         has_bases = bool(node.bases)
-        inherits_from_model_class = any(isinstance(base, ast.Name) and base.id == model_class.__name__ for base in node.bases)
-        return has_bases and inherits_from_model_class
+        if not has_bases:
+            return False
+
+        _allowed_model_names = {model.__name__ for model in allowed_models}
+        inherits_from_allowed_model = any(isinstance(base, ast.Name) and base.id in _allowed_model_names for base in node.bases)
+        return inherits_from_allowed_model
 
     @staticmethod
     def _is_valid_class_name(node) -> bool:
@@ -125,7 +132,7 @@ class AbstractSyntaxTreeValidator:
         return isinstance(node, ast.ClassDef)
 
     @staticmethod
-    def _has_too_many_definitions(tree, definition_limit: int) -> bool:
+    def _is_in_definition_limit(tree, definition_limit: int) -> bool:
         has_definitions = bool(tree.body)
         within_limit = len(tree.body) <= definition_limit
         return has_definitions and within_limit
@@ -133,7 +140,7 @@ class AbstractSyntaxTreeValidator:
     # --
 
     @classmethod
-    def validate(cls, definitions: str, model_class: type, definition_limit: int) -> bool:
+    def validate(cls, definitions: str, allowed_models: tuple[type, ...], definition_limit: int) -> bool:
         """
         Validate the model string contains only safe Pydantic model definitions using AST.
 
@@ -147,7 +154,7 @@ class AbstractSyntaxTreeValidator:
         try:
             tree = ast.parse(definitions)
 
-            if not cls._has_too_many_definitions(tree, definition_limit):
+            if not cls._is_in_definition_limit(tree, definition_limit):
                 return False
 
             for node in tree.body:
@@ -155,7 +162,7 @@ class AbstractSyntaxTreeValidator:
                     return False
                 if not cls._is_valid_class_name(node):
                     return False
-                if not cls._does_inherit_correct_model(node, model_class):
+                if not cls._uses_only_allowed_models(node, allowed_models):
                     return False
                 if not cls._is_safe_class_body(node):
                     return False
@@ -167,10 +174,10 @@ class AbstractSyntaxTreeValidator:
             return False
 
 
-class PatternValidator:
-    """Validate the model string contains only safe Pydantic model definitions using simple pattern matching."""
+class _PatternValidator:
+    """Validate the model string using simple pattern matching."""
 
-    DANGERS = Dangers(
+    DANGERS = _Dangers(
         patterns=(
             "import ",
             "from ",
@@ -203,22 +210,37 @@ class PatternValidator:
         return True
 
 
-class ValidationError(Exception):
+class _ValidationError(Exception):
     "Raised if validation failed due to any reason."
 
 
-class ModelStringValidator:
+class StringValidator:
     """
-    Main validator class that combines AST and pattern validation
-    to check whether a string contains only pydantic BaseModels.
+    Wraps other validators offering ways to validate whether python code
+    in string form contains only code that is safe based on your settings.
     """
+
+    @staticmethod
+    def basic_pattern_validation(definitions):
+        if not _PatternValidator.validate(definitions):
+            raise _ValidationError("Invalid or potentially unsafe pattern detected in model definition")
+
+    @staticmethod
+    def validate_models(definitions: str, *, allowed_models: tuple[type, ...] = (BaseModel,), definition_limit: int = 10):
+        if not _AbstractSyntaxTreeValidator.validate(definitions, allowed_models, definition_limit):
+            raise _ValidationError("Invalid or potentially unsafe code structure in model definition")
 
     @classmethod
-    def validate(cls, definitions: str, *, model_class: type = BaseModel, definition_limit: int = 10):
-        "Validate that the provided string contains only safe Pydantic model definitions."
+    def validate(cls, value, allowed_models: tuple[type, ...] = (BaseModel,), definition_limit: int = 10):
+        "Wrapper for all methods chained."
 
-        if not PatternValidator.validate(definitions):
-            raise ValidationError("Invalid or potentially unsafe pattern detected in model definition")
+        cls.basic_pattern_validation(value)
+        cls.validate_models(value, allowed_models=allowed_models, definition_limit=definition_limit)
 
-        if not AbstractSyntaxTreeValidator.validate(definitions, model_class, definition_limit):
-            raise ValidationError("Invalid or potentially unsafe code structure in model definition")
+
+# class InputValidator:
+#     "Toolbox for all input validation needs."
+
+#     @property (must be used on instance not class)
+#     def strings(cls):
+#         return StringValidator
