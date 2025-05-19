@@ -15,6 +15,12 @@ class ChatRequest(BaseModel):
     metadata: dict
 
 
+def _handle_structured_output(schema: str) -> type:
+    data_schemas: tuple[type, ...] = pydantic_parser.parse_models(schema, BaseModel, 10)
+    # needs to be single schema which would use the others internally
+    return data_schemas[-1]
+
+
 def _handle_multimodal_messages(prompt, urls):
     for message in prompt:
         if message["role"] == "user":
@@ -33,7 +39,8 @@ def handle_messages(
     is_new_lf_prompt,
     text_prompt,
     file_urls,
-) -> dict[str, list[dict] | dict]:
+) -> list[dict] | list:
+    messages = None
 
     if is_new_lf_prompt:
         messages = lf_prompt.compile(**(lf_prompt_config.placeholders or {}))
@@ -45,18 +52,24 @@ def handle_messages(
     elif isinstance(text_prompt, str):
         messages = [dict(role="user", content=text_prompt)]
 
+    else:
+        # should not be reached as prompt must contain prompt config
+        # - what about if the previous lf prompt is re-used?
+        # - why is it being interpreted as new lf prompt?
+        raise RuntimeError("Unexpected lack of message handling.")
+
     if file_urls:
         messages = _handle_multimodal_messages(messages, file_urls)
 
     return messages
 
 
-def filter_system_prompts(messages):
+def filter_system_prompts(messages: list) -> list:
     # only keep the first system prompt if provided
     return [msg for idx, msg in enumerate(messages) if msg.get("role") != "system" or idx == 0]
 
 
-async def call(data: ChatRequest) -> list[dict]:
+async def call(data: ChatRequest) -> dict:
     lf_prompt_config = data.lf_prompt_config
     is_new_lf_prompt = data.is_new_lf_prompt
     text_prompt = data.text_prompt
@@ -64,6 +77,9 @@ async def call(data: ChatRequest) -> list[dict]:
     file_urls = data.file_urls
     output_schema = data.output_schema
     metadata = data.metadata
+
+    if message_history is None:
+        message_history = []
 
     # --- GET PARAMS FROM LAST LANGFUSE PROMPT PROVIDED
 
@@ -76,11 +92,13 @@ async def call(data: ChatRequest) -> list[dict]:
     # includes session id (and custom metadata if provided)
     params["metadata"] = metadata
 
-    # get json schema from data or pop from params and turn into pydantic for structured response
-    schema = output_schema or params.pop("output_schema", None)
+    # get previously used json schema from data or a new one from prompt params and remove if exists
+    schema = output_schema or params.get("output_schema")
+    params.pop("output_schema", None)
 
+    # parse data model classes from definition in string for structured output response formats
     if isinstance(schema, str) and schema.strip():
-        params["response_format"] = pydantic_parser.parse(schema, BaseModel, 10)
+        params["response_format"] = _handle_structured_output(schema)
 
     # ---
 
