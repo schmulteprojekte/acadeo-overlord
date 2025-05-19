@@ -2,8 +2,6 @@ from pydantic import BaseModel, Field
 from typing import Literal, List, Dict, Tuple, Type, Optional, Union, Any
 import inspect
 
-from src.utils import validation
-
 
 def _build_safe_execution_scope(model_classes: tuple[type, ...] = (BaseModel,)) -> dict:
     # scope to execute string with the model class already included
