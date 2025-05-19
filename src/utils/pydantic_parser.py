@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal, List, Dict, Tuple, Type, Optional, Union, Any
 import inspect
 
@@ -27,9 +27,10 @@ def _build_safe_execution_scope(model_classes: tuple[type, ...] = (BaseModel,)) 
         "None": None,
     }
 
-    # add common typing modules for convenience
+    # add common other stuff for convenience
     execution_scope.update(
         {
+            # typing
             "Literal": Literal,
             "List": List,
             "Dict": Dict,
@@ -38,6 +39,8 @@ def _build_safe_execution_scope(model_classes: tuple[type, ...] = (BaseModel,)) 
             "Optional": Optional,
             "Union": Union,
             "Any": Any,
+            # pydantic
+            "Field": Field,
         }
     )
 
