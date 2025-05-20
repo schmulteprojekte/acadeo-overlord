@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from src.utils.schema_to_model import transform
+from src.utils import validation, parsing
 from src.services import langfuse, litellm
 
 
@@ -11,18 +11,24 @@ class ChatRequest(BaseModel):
     message_history: list[dict] = None
     # ---
     file_urls: list[str] = None
-    json_schema: dict | None = None
+    output_schema: str | None = None
     metadata: dict
 
 
-def handle_response_format(json_schema):
-    if isinstance(json_schema, dict):
-        response_format: BaseModel = transform(json_schema)
-        return response_format
+def _handle_structured_output(schema: str) -> type:
+    if isinstance(schema, str) and schema.strip():
+        schema_model_class_type = BaseModel
 
-    elif isinstance(json_schema, str):
-        # return {"type", "json_object"}
-        raise Exception("Json mode is not supported! Please use structured responses instead.")
+        # validate security of input code string
+        validation.StringValidator.validate(schema, schema_model_class_type, 10)
+
+        # parse data model classes from definition in string for structured output response formats
+        pydantic_schemas: tuple[type, ...] = parsing.PydanticParser.parse_models(schema, schema_model_class_type)
+
+        # needs to be single schema which would use others internally
+        return pydantic_schemas[-1]
+
+    raise RuntimeError("Unexpected schema format.")
 
 
 def _handle_multimodal_messages(prompt, urls):
@@ -43,7 +49,8 @@ def handle_messages(
     is_new_lf_prompt,
     text_prompt,
     file_urls,
-) -> dict[str, list[dict] | dict]:
+) -> list[dict] | list:
+    messages = None
 
     if is_new_lf_prompt:
         messages = lf_prompt.compile(**(lf_prompt_config.placeholders or {}))
@@ -55,25 +62,34 @@ def handle_messages(
     elif isinstance(text_prompt, str):
         messages = [dict(role="user", content=text_prompt)]
 
+    else:
+        # should not be reached as prompt must contain prompt config
+        # - what about if the previous lf prompt is re-used?
+        # - why is it being interpreted as new lf prompt?
+        raise RuntimeError("Unexpected lack of message handling.")
+
     if file_urls:
         messages = _handle_multimodal_messages(messages, file_urls)
 
     return messages
 
 
-def filter_system_prompts(messages):
+def filter_system_prompts(messages: list) -> list:
     # only keep the first system prompt if provided
     return [msg for idx, msg in enumerate(messages) if msg.get("role") != "system" or idx == 0]
 
 
-async def call(data: ChatRequest) -> list[dict]:
+async def call(data: ChatRequest) -> dict:
     lf_prompt_config = data.lf_prompt_config
     is_new_lf_prompt = data.is_new_lf_prompt
     text_prompt = data.text_prompt
     message_history = data.message_history
     file_urls = data.file_urls
-    json_schema = data.json_schema
+    output_schema = data.output_schema
     metadata = data.metadata
+
+    if message_history is None:
+        message_history = []
 
     # --- GET PARAMS FROM LAST LANGFUSE PROMPT PROVIDED
 
@@ -86,10 +102,11 @@ async def call(data: ChatRequest) -> list[dict]:
     # includes session id (and custom metadata if provided)
     params["metadata"] = metadata
 
-    # get json schema from data or pop from params and turn into pydantic for structured response
-    schema = json_schema or params.pop("json_schema", None)
-    if schema:
-        params["response_format"] = handle_response_format(schema)
+    # get previously used output schema from data or a new one from prompt params and remove if exists
+    schema_kind = "pydantic_schema"
+    new_schema = params.pop(schema_kind, None)
+    if schema := output_schema or new_schema:
+        params["response_format"] = _handle_structured_output(schema)
 
     # ---
 
