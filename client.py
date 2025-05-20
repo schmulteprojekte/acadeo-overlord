@@ -38,6 +38,10 @@ def prepare_prompt(project, args, placeholders=[]) -> PromptConfig:
     return prompt_config
 
 
+class OverlordClientError(Exception):
+    "Raised if anything in the overlord client fails."
+
+
 # ---
 
 
@@ -99,7 +103,7 @@ class _Client:
 
     def _auth(self, api_key: str):
         if not self._server:
-            raise ValueError("No server url specified!")
+            raise OverlordClientError("No server url specified!")
 
         if "x-api-key" not in self._session.headers or self._session.headers["x-api-key"] != api_key:
             self._session.headers.update({"x-api-key": api_key})
@@ -204,7 +208,7 @@ class _Chat:
         if isinstance(prompt_data, dict):
             is_new_lf_prompt = self._handle_lf_prompt_config(prompt_data)
         elif not self._active_lf_prompt_config:
-            raise ValueError("A chat must be initialized with a Langfuse prompt config!")
+            raise OverlordClientError("A chat must be initialized with a Langfuse prompt config!")
 
         chat_request = ChatRequest(
             lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,  # fallback to first lf prompt
