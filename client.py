@@ -1,5 +1,5 @@
 import requests, json, contextlib, uuid
-from typing import Literal, Generator
+from typing import Literal, Generator, Callable
 from pydantic import BaseModel
 
 
@@ -136,9 +136,10 @@ class _Client:
 
 
 class ChatInput(BaseModel):
-    prompt: str | dict
-    file_urls: list[str] = []
-    metadata: dict = {}
+    prompt: str | dict | None
+    file_urls: list[str] = None
+    metadata: dict = None
+    tools: dict[str, Callable] = None
 
 
 class ChatRequest(BaseModel):
@@ -174,10 +175,10 @@ class ChatRequest(BaseModel):
     is_new_lf_prompt: bool
     # ---
     text_prompt: str | None = None
-    message_history: list[dict] = None
+    message_history: list[dict] | None = None
     # ---
-    file_urls: list[str] = None
-    response_schema: str | None = None
+    file_urls: list[str] | None = None
+    output_schema: str | None = None
     metadata: dict
 
 
@@ -186,7 +187,9 @@ class _Chat:
         self.session_id = f"overlord_{uuid.uuid4()}"
         self._overlord = overlord
         self._endpoint = "ai/chat"
-        self._message_history = []
+        self.tools = None
+        #
+        self._message_history = None
         self._initial_lf_prompt_config = None
         self._initial_response_schema = None
         self._active_lf_prompt_config = None
@@ -203,6 +206,7 @@ class _Chat:
         prompt_data = input_data.prompt
         file_urls = input_data.file_urls
         custom_metadata = input_data.metadata
+        self.tools = self.tools or input_data.tools
 
         is_new_lf_prompt = False
         if isinstance(prompt_data, dict):
@@ -216,7 +220,7 @@ class _Chat:
             text_prompt=None if isinstance(prompt_data, dict) else prompt_data,
             message_history=self._message_history,
             file_urls=file_urls,
-            response_schema=self._initial_response_schema,
+            output_schema=self._initial_response_schema,
             metadata=dict(session_id=self.session_id, **(dict(custom=custom_metadata) if custom_metadata else {})),
         )
 
@@ -228,9 +232,38 @@ class _Chat:
 
         if not self._message_history:
             self._initial_lf_prompt_config = self._active_lf_prompt_config
-            self._initial_response_schema = response["schema"]
+            self._initial_response_schema = response["schema"]  # keep only initial output schema across chat
 
         self._message_history = response["messages"]
+
+        # tool use
+        if tool_calls := response["tool_calls"]:
+            if not self.tools:
+                raise OverlordClientError("No tools to call were provided!")
+
+            for tool_call in tool_calls:
+                tool_function = tool_call["function"]
+                function_name = tool_function["name"]
+
+                if function_name not in self.tools:
+                    raise OverlordClientError(f"Tool '{function_name}' not in available tools '{', '.join(self.tools)}'")
+
+                function_to_call = self.tools[function_name]
+                function_args = json.loads(tool_function["arguments"])
+                function_response = function_to_call(**function_args)
+
+                self._message_history.append(
+                    dict(
+                        tool_call_id=tool_call["id"],
+                        role="tool",
+                        name=function_name,
+                        content=function_response if isinstance(function_response, str) else json.dumps(function_response),
+                    )
+                )
+
+            # automatically call itself again with the response of the tools using internal active config
+            return self.request(ChatInput(prompt=None))
+
         reply = response["messages"][-1]["content"]
         return loads_if_json(reply)
 
