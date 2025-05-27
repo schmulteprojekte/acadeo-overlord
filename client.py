@@ -53,7 +53,7 @@ class _Client:
 
     ```python
     # init
-    client = Client("http://your-server-url", "your-api-key")
+    client = _Client("http://your-server-url", "your-api-key")
 
     # check health
     print(client.ping().text)
@@ -69,8 +69,7 @@ class _Client:
 
         self._auth(api_key)
 
-    # ---
-
+    # hidden helpers
     def _construct_url(self, endpoint: str = None):
         return f"{self._server.rstrip('/')}/{(endpoint or '').lstrip('/')}"
 
@@ -99,8 +98,6 @@ class _Client:
                 raise self._create_server_error(event_data)
             yield event_data
 
-    # ---
-
     def _auth(self, api_key: str):
         if not self._server:
             raise OverlordClientError("No server url specified!")
@@ -108,12 +105,11 @@ class _Client:
         if "x-api-key" not in self._session.headers or self._session.headers["x-api-key"] != api_key:
             self._session.headers.update({"x-api-key": api_key})
 
+    # public interface
     def ping(self):
         response = self._session.request("GET", self._construct_url())
         response.raise_for_status()
         return response
-
-    # ---
 
     def request(
         self,
@@ -194,6 +190,7 @@ class _Chat:
         self._initial_response_schema = None
         self._active_lf_prompt_config = None
 
+    # hidden helpers
     def _handle_lf_prompt_config(self, prompt_data) -> bool:
         prompt_config = prepare_prompt(self._overlord.project, **prompt_data)
 
@@ -230,8 +227,7 @@ class _Chat:
             # automatically call itself again with the response of the tools using internal active config
             return self.request(ChatInput(prompt=None))
 
-    # ---
-
+    # private wrappers
     def _prepare_request(self, input_data: ChatInput):
         prompt_data = input_data.prompt
         file_urls = input_data.file_urls
@@ -277,8 +273,7 @@ class _Chat:
         reply = response["messages"][-1]["content"]
         return loads_if_json(reply)
 
-    # ---
-
+    # public interface
     def request(self, input_data: ChatInput):
         chat_request = self._prepare_request(input_data)
         response = self._execute_request(chat_request)
