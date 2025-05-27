@@ -163,6 +163,8 @@ print(chat.session_id)
 response = chat.request(data)
 ```
 
+---
+
 #### Tool use
 
 Set when creating Langfuse prompt
