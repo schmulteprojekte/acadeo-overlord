@@ -18,7 +18,7 @@ class PromptArgs(BaseModel):
 
 class PromptConfig(BaseModel):
     args: PromptArgs
-    placeholders: dict = {}
+    placeholders: dict | None = None
     project: str
 
 
@@ -89,7 +89,7 @@ class _Client:
         if "x-api-key" not in self._session.headers or self._session.headers["x-api-key"] != api_key:
             self._session.headers.update({"x-api-key": api_key})
 
-    # public interface
+    # public interfaces
     def ping(self) -> requests.Response:
         response = self._session.request("GET", self._construct_url())
         response.raise_for_status()
@@ -168,7 +168,7 @@ class _Chat:
         self._overlord = overlord
         self._endpoint = "ai/chat"
         self.tools = None
-        #
+        # ---
         self._message_history = None
         self._initial_lf_prompt_config = None
         self._initial_response_schema = None
@@ -206,30 +206,32 @@ class _Chat:
             return True  # is new lf prompt
         return False  # is lf prompt but not new
 
+    def _call_tool(self, tool_call) -> dict:
+        tool_function = tool_call["function"]
+        function_name = tool_function["name"]
+
+        if function_name not in self.tools:
+            raise OverlordClientError(f"Tool '{function_name}' not in available tools '{', '.join(self.tools)}'")
+
+        function_to_call = self.tools[function_name]
+        function_args = json.loads(tool_function["arguments"])
+        response = function_to_call(**function_args)
+
+        return dict(
+            tool_call_id=tool_call["id"],
+            role="tool",
+            name=function_name,
+            content=response if isinstance(response, str) else json.dumps(response),
+        )
+
     def _handle_tool_calls(self, tool_calls):
         if tool_calls:
             if not self.tools:
                 raise OverlordClientError("No tools to call were provided!")
 
             for tool_call in tool_calls:
-                tool_function = tool_call["function"]
-                function_name = tool_function["name"]
-
-                if function_name not in self.tools:
-                    raise OverlordClientError(f"Tool '{function_name}' not in available tools '{', '.join(self.tools)}'")
-
-                function_to_call = self.tools[function_name]
-                function_args = json.loads(tool_function["arguments"])
-                function_response = function_to_call(**function_args)
-
-                self._message_history.append(
-                    dict(
-                        tool_call_id=tool_call["id"],
-                        role="tool",
-                        name=function_name,
-                        content=function_response if isinstance(function_response, str) else json.dumps(function_response),
-                    )
-                )
+                tool_response_message = self._call_tool(tool_call)
+                self._message_history.append(tool_response_message)
 
             # automatically call itself again with the response of the tools using internal active config
             return self.request(ChatInput(prompt=None))
@@ -243,7 +245,7 @@ class _Chat:
 
         is_new_lf_prompt = self._handle_prompt_config(prompt_data)
 
-        chat_request = ChatRequest(
+        return ChatRequest(
             lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,
             is_new_lf_prompt=is_new_lf_prompt,
             text_prompt=None if isinstance(prompt_data, dict) else prompt_data,
@@ -252,8 +254,6 @@ class _Chat:
             output_schema=self._initial_response_schema,
             metadata=dict(session_id=self.session_id, **(dict(custom=custom_metadata) if custom_metadata else {})),
         )
-
-        return chat_request
 
     def _execute_request(self, request_data):
         try:
@@ -322,7 +322,7 @@ class Overlord:
     def chat(self) -> _Chat:
         return _Chat(self)
 
-    def task(self, data) -> str | list | dict:
+    def task(self, data: ChatInput) -> str | list | dict:
         chat = self.chat()
         chat.session_id = None
         return chat.request(data)
