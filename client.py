@@ -22,22 +22,6 @@ class PromptConfig(BaseModel):
     project: str
 
 
-def prepare_prompt(project, args, placeholders=[]) -> PromptConfig:
-    prompt_config = PromptConfig(
-        args=PromptArgs(
-            name=args["name"],
-            label=args.get("label"),
-            version=args.get("version"),
-        ),
-        project=project,
-    )
-
-    if placeholders:
-        prompt_config.placeholders = placeholders
-
-    return prompt_config
-
-
 class OverlordClientError(Exception):
     "Raised if anything in the overlord client fails."
 
@@ -106,7 +90,7 @@ class _Client:
             self._session.headers.update({"x-api-key": api_key})
 
     # public interface
-    def ping(self):
+    def ping(self) -> requests.Response:
         response = self._session.request("GET", self._construct_url())
         response.raise_for_status()
         return response
@@ -191,13 +175,36 @@ class _Chat:
         self._active_lf_prompt_config = None
 
     # hidden helpers
-    def _handle_lf_prompt_config(self, prompt_data) -> bool:
-        prompt_config = prepare_prompt(self._overlord.project, **prompt_data)
+    def _handle_prompt_config(self, prompt_data) -> bool:
+        """
+        Process prompt config and determine if it's new
+        - Fetch a fresh prompt from Langfuse (True)
+        - Continue with existing conversation context (False)
+
+        Returns:
+            - False for text prompts (after checking for existing lf prompt config)
+            - True/False for lf dict prompts based on config changes
+        """
+
+        if not isinstance(prompt_data, dict):
+            if not self._active_lf_prompt_config:
+                raise OverlordClientError("A chat must be initialized with a Langfuse prompt config!")
+            return False  # is text prompt and not new lf prompt
+
+        # Dict prompt - build and compare config
+        prompt_config = PromptConfig(
+            args=PromptArgs(**prompt_data["args"]),
+            project=self._overlord.project,
+        )
+
+        placeholders = prompt_data.get("placeholders")
+        if placeholders:
+            prompt_config.placeholders = placeholders
 
         if prompt_config != self._active_lf_prompt_config:
             self._active_lf_prompt_config = prompt_config
-            return True
-        return False
+            return True  # is new lf prompt
+        return False  # is lf prompt but not new
 
     def _handle_tool_calls(self, tool_calls):
         if tool_calls:
@@ -234,11 +241,7 @@ class _Chat:
         custom_metadata = input_data.metadata
         self.tools = input_data.tools or self.tools
 
-        is_new_lf_prompt = False
-        if isinstance(prompt_data, dict):
-            is_new_lf_prompt = self._handle_lf_prompt_config(prompt_data)
-        elif not self._active_lf_prompt_config:
-            raise OverlordClientError("A chat must be initialized with a Langfuse prompt config!")
+        is_new_lf_prompt = self._handle_prompt_config(prompt_data)
 
         chat_request = ChatRequest(
             lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,
@@ -274,7 +277,7 @@ class _Chat:
         return loads_if_json(reply)
 
     # public interface
-    def request(self, input_data: ChatInput):
+    def request(self, input_data: ChatInput) -> str | list | dict:
         chat_request = self._prepare_request(input_data)
         response = self._execute_request(chat_request)
         return self._handle_response(response)
@@ -316,10 +319,10 @@ class Overlord:
         self.input = ChatInput
         self.project = project
 
-    def chat(self):
+    def chat(self) -> _Chat:
         return _Chat(self)
 
-    def task(self, data):
+    def task(self, data) -> str | list | dict:
         chat = self.chat()
         chat.session_id = None
         return chat.request(data)
