@@ -1,5 +1,5 @@
 import requests, json, contextlib, uuid
-from typing import Literal, Generator
+from typing import Literal, Generator, Callable
 from pydantic import BaseModel
 
 
@@ -53,7 +53,7 @@ class _Client:
 
     ```python
     # init
-    client = Client("http://your-server-url", "your-api-key")
+    client = _Client("http://your-server-url", "your-api-key")
 
     # check health
     print(client.ping().text)
@@ -69,8 +69,7 @@ class _Client:
 
         self._auth(api_key)
 
-    # ---
-
+    # hidden helpers
     def _construct_url(self, endpoint: str = None):
         return f"{self._server.rstrip('/')}/{(endpoint or '').lstrip('/')}"
 
@@ -99,8 +98,6 @@ class _Client:
                 raise self._create_server_error(event_data)
             yield event_data
 
-    # ---
-
     def _auth(self, api_key: str):
         if not self._server:
             raise OverlordClientError("No server url specified!")
@@ -108,12 +105,11 @@ class _Client:
         if "x-api-key" not in self._session.headers or self._session.headers["x-api-key"] != api_key:
             self._session.headers.update({"x-api-key": api_key})
 
+    # public interface
     def ping(self):
         response = self._session.request("GET", self._construct_url())
         response.raise_for_status()
         return response
-
-    # ---
 
     def request(
         self,
@@ -136,9 +132,10 @@ class _Client:
 
 
 class ChatInput(BaseModel):
-    prompt: str | dict
-    file_urls: list[str] = []
-    metadata: dict = {}
+    prompt: str | dict | None
+    file_urls: list[str] = None
+    metadata: dict = None
+    tools: dict[str, Callable] = None
 
 
 class ChatRequest(BaseModel):
@@ -174,10 +171,10 @@ class ChatRequest(BaseModel):
     is_new_lf_prompt: bool
     # ---
     text_prompt: str | None = None
-    message_history: list[dict] = None
+    message_history: list[dict] | None = None
     # ---
-    file_urls: list[str] = None
-    response_schema: str | None = None
+    file_urls: list[str] | None = None
+    output_schema: str | None = None
     metadata: dict
 
 
@@ -186,11 +183,14 @@ class _Chat:
         self.session_id = f"overlord_{uuid.uuid4()}"
         self._overlord = overlord
         self._endpoint = "ai/chat"
-        self._message_history = []
+        self.tools = None
+        #
+        self._message_history = None
         self._initial_lf_prompt_config = None
         self._initial_response_schema = None
         self._active_lf_prompt_config = None
 
+    # hidden helpers
     def _handle_lf_prompt_config(self, prompt_data) -> bool:
         prompt_config = prepare_prompt(self._overlord.project, **prompt_data)
 
@@ -199,10 +199,40 @@ class _Chat:
             return True
         return False
 
-    def request(self, input_data: ChatInput):
+    def _handle_tool_calls(self, tool_calls):
+        if tool_calls:
+            if not self.tools:
+                raise OverlordClientError("No tools to call were provided!")
+
+            for tool_call in tool_calls:
+                tool_function = tool_call["function"]
+                function_name = tool_function["name"]
+
+                if function_name not in self.tools:
+                    raise OverlordClientError(f"Tool '{function_name}' not in available tools '{', '.join(self.tools)}'")
+
+                function_to_call = self.tools[function_name]
+                function_args = json.loads(tool_function["arguments"])
+                function_response = function_to_call(**function_args)
+
+                self._message_history.append(
+                    dict(
+                        tool_call_id=tool_call["id"],
+                        role="tool",
+                        name=function_name,
+                        content=function_response if isinstance(function_response, str) else json.dumps(function_response),
+                    )
+                )
+
+            # automatically call itself again with the response of the tools using internal active config
+            return self.request(ChatInput(prompt=None))
+
+    # private wrappers
+    def _prepare_request(self, input_data: ChatInput):
         prompt_data = input_data.prompt
         file_urls = input_data.file_urls
         custom_metadata = input_data.metadata
+        self.tools = input_data.tools or self.tools
 
         is_new_lf_prompt = False
         if isinstance(prompt_data, dict):
@@ -211,28 +241,43 @@ class _Chat:
             raise OverlordClientError("A chat must be initialized with a Langfuse prompt config!")
 
         chat_request = ChatRequest(
-            lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,  # fallback to first lf prompt
+            lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,
             is_new_lf_prompt=is_new_lf_prompt,
             text_prompt=None if isinstance(prompt_data, dict) else prompt_data,
             message_history=self._message_history,
             file_urls=file_urls,
-            response_schema=self._initial_response_schema,
+            output_schema=self._initial_response_schema,
             metadata=dict(session_id=self.session_id, **(dict(custom=custom_metadata) if custom_metadata else {})),
         )
 
+        return chat_request
+
+    def _execute_request(self, request_data):
         try:
-            response = next(self._overlord.client.request(self._endpoint, "POST", chat_request.model_dump()))
+            return next(self._overlord.client.request(self._endpoint, "POST", request_data.model_dump()))
         except:
             self._active_lf_prompt_config = None  # reset for clean retry
             raise
 
+    def _handle_response(self, response):
         if not self._message_history:
             self._initial_lf_prompt_config = self._active_lf_prompt_config
             self._initial_response_schema = response["schema"]
 
         self._message_history = response["messages"]
+
+        tool_response = self._handle_tool_calls(response["tool_calls"])
+        if tool_response:
+            return tool_response
+
         reply = response["messages"][-1]["content"]
         return loads_if_json(reply)
+
+    # public interface
+    def request(self, input_data: ChatInput):
+        chat_request = self._prepare_request(input_data)
+        response = self._execute_request(chat_request)
+        return self._handle_response(response)
 
 
 # ---

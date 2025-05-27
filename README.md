@@ -95,9 +95,10 @@ Every chat must however start with a Langfuse prompt, as model settings are deri
 
 ```python
 class ChatInput(BaseModel):
-    prompt: str | dict
-    file_urls: list[str] = []  # optional
-    metadata: dict = {}  # custom
+    prompt: str | dict | None  # required (None only for internal tool use call)
+    file_urls: list[str] = None  # optional
+    metadata: dict = None  # optional
+    tools: dict[str, Callable] = None  # optional
 
 # overlord.input internalizes this schema
 ```
@@ -160,6 +161,69 @@ chat = overlord.chat()
 print(chat.session_id)
 
 response = chat.request(data)
+```
+
+---
+
+#### Tool use
+
+Set when creating Langfuse prompt
+```python
+tools = [
+    dict(
+        type="function",
+        function=dict(
+            name="get_random_words",
+            description="Generates a random word as string",
+            parameters=dict(
+                type="object",
+                properties=dict(
+                    n=dict(
+                        type="integer",
+                        description="How many words to return",
+                    ),
+                ),
+                required=["n"],
+            ),
+        ),
+    )
+]
+
+langfuse.create_prompt(
+    name="tools_test",
+    prompt="Write a {{text}} about {{topic}}.",
+    config=dict(
+        model="gpt-4o-mini",
+        tools=tools,
+        tool_choice="auto",  # how the AI decides on which tool to use
+    ),
+)
+```
+
+Provide actual tools to client in call
+```python
+def get_random_words(n: int):
+    selection = ["cat", "dog", "horse", "fish", "human"]
+    return [random.choice(selection) for _ in range(n)]
+
+
+data = overlord.input(
+    prompt=dict(
+        args=dict(
+            name="tools_test",
+            label="latest",
+        ),
+        placeholders=dict(
+            text="very short poem",
+            topic="a topic comprised of the words returned by the get_random_words tool",
+        ),
+    ),
+    tools=dict(
+        get_random_words=get_random_words,
+    ),
+)
+
+response = overlord.task(data)
 ```
 
 ## Notes

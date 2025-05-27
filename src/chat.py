@@ -8,9 +8,9 @@ class ChatRequest(BaseModel):
     is_new_lf_prompt: bool
     # ---
     text_prompt: str | None = None
-    message_history: list[dict] = None
+    message_history: list[dict] | None = None
     # ---
-    file_urls: list[str] = None
+    file_urls: list[str] | None = None
     output_schema: str | None = None
     metadata: dict
 
@@ -50,7 +50,7 @@ def handle_messages(
     text_prompt,
     file_urls,
 ) -> list[dict] | list:
-    messages = None
+    messages = []
 
     if is_new_lf_prompt:
         messages = lf_prompt.compile(**(lf_prompt_config.placeholders or {}))
@@ -62,11 +62,11 @@ def handle_messages(
     elif isinstance(text_prompt, str):
         messages = [dict(role="user", content=text_prompt)]
 
-    else:
-        # should not be reached as prompt must contain prompt config
-        # - what about if the previous lf prompt is re-used?
-        # - why is it being interpreted as new lf prompt?
-        raise RuntimeError("Unexpected lack of message handling.")
+    # else:
+    #     # should not be reached as prompt must contain prompt config
+    #     # - what about if the previous lf prompt is re-used?
+    #     # - why is it being interpreted as new lf prompt?
+    #     raise RuntimeError("Unexpected lack of message handling.")
 
     if file_urls:
         messages = _handle_multimodal_messages(messages, file_urls)
@@ -124,8 +124,13 @@ async def call(data: ChatRequest) -> dict:
 
     # ---
 
-    response = await litellm.call(**params)
-    message_history.append(dict(role="assistant", content=response))
+    reply, tool_calls, response_message = await litellm.async_call(**params)
 
-    # must return schema to keep the one from initial lf prompt throughout
-    return dict(messages=message_history, schema=schema)
+    assistant_message = response_message.model_dump() if tool_calls else dict(role="assistant", content=reply)
+    message_history.append(assistant_message)
+
+    return dict(
+        messages=message_history,
+        tool_calls=[tool_call.model_dump() for tool_call in tool_calls] if tool_calls else None,
+        schema=schema,  # must return schema to keep the one from initial lf prompt throughout
+    )
