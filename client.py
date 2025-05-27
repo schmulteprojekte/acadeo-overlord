@@ -202,11 +202,35 @@ class _Chat:
             return True
         return False
 
+    def _handle_tool_calls(self, tool_calls):
+        if not self.tools:
+            raise OverlordClientError("No tools to call were provided!")
+
+        for tool_call in tool_calls:
+            tool_function = tool_call["function"]
+            function_name = tool_function["name"]
+
+            if function_name not in self.tools:
+                raise OverlordClientError(f"Tool '{function_name}' not in available tools '{', '.join(self.tools)}'")
+
+            function_to_call = self.tools[function_name]
+            function_args = json.loads(tool_function["arguments"])
+            function_response = function_to_call(**function_args)
+
+            self._message_history.append(
+                dict(
+                    tool_call_id=tool_call["id"],
+                    role="tool",
+                    name=function_name,
+                    content=function_response if isinstance(function_response, str) else json.dumps(function_response),
+                )
+            )
+
     def request(self, input_data: ChatInput):
         prompt_data = input_data.prompt
         file_urls = input_data.file_urls
         custom_metadata = input_data.metadata
-        self.tools = self.tools or input_data.tools
+        self.tools = input_data.tools or self.tools
 
         is_new_lf_prompt = False
         if isinstance(prompt_data, dict):
@@ -238,29 +262,7 @@ class _Chat:
 
         # tool use
         if tool_calls := response["tool_calls"]:
-            if not self.tools:
-                raise OverlordClientError("No tools to call were provided!")
-
-            for tool_call in tool_calls:
-                tool_function = tool_call["function"]
-                function_name = tool_function["name"]
-
-                if function_name not in self.tools:
-                    raise OverlordClientError(f"Tool '{function_name}' not in available tools '{', '.join(self.tools)}'")
-
-                function_to_call = self.tools[function_name]
-                function_args = json.loads(tool_function["arguments"])
-                function_response = function_to_call(**function_args)
-
-                self._message_history.append(
-                    dict(
-                        tool_call_id=tool_call["id"],
-                        role="tool",
-                        name=function_name,
-                        content=function_response if isinstance(function_response, str) else json.dumps(function_response),
-                    )
-                )
-
+            self._handle_tool_calls(tool_calls)
             # automatically call itself again with the response of the tools using internal active config
             return self.request(ChatInput(prompt=None))
 
