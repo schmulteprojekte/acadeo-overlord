@@ -18,24 +18,8 @@ class PromptArgs(BaseModel):
 
 class PromptConfig(BaseModel):
     args: PromptArgs
-    placeholders: dict = {}
+    placeholders: dict | None = None
     project: str
-
-
-def prepare_prompt(project, args, placeholders=[]) -> PromptConfig:
-    prompt_config = PromptConfig(
-        args=PromptArgs(
-            name=args["name"],
-            label=args.get("label"),
-            version=args.get("version"),
-        ),
-        project=project,
-    )
-
-    if placeholders:
-        prompt_config.placeholders = placeholders
-
-    return prompt_config
 
 
 class OverlordClientError(Exception):
@@ -105,8 +89,8 @@ class _Client:
         if "x-api-key" not in self._session.headers or self._session.headers["x-api-key"] != api_key:
             self._session.headers.update({"x-api-key": api_key})
 
-    # public interface
-    def ping(self):
+    # public interfaces
+    def ping(self) -> requests.Response:
         response = self._session.request("GET", self._construct_url())
         response.raise_for_status()
         return response
@@ -184,20 +168,61 @@ class _Chat:
         self._overlord = overlord
         self._endpoint = "ai/chat"
         self.tools = None
-        #
+        # ---
         self._message_history = None
         self._initial_lf_prompt_config = None
         self._initial_response_schema = None
         self._active_lf_prompt_config = None
 
     # hidden helpers
-    def _handle_lf_prompt_config(self, prompt_data) -> bool:
-        prompt_config = prepare_prompt(self._overlord.project, **prompt_data)
+    def _handle_prompt_config(self, prompt_data) -> bool:
+        """
+        Process prompt config and determine if it's new
+        - Fetch a fresh prompt from Langfuse (True)
+        - Continue with existing conversation context (False)
+
+        Returns:
+            - False for text prompts (after checking for existing lf prompt config)
+            - True/False for lf dict prompts based on config changes
+        """
+
+        if not isinstance(prompt_data, dict):
+            if not self._active_lf_prompt_config:
+                raise OverlordClientError("A chat must be initialized with a Langfuse prompt config!")
+            return False  # is text prompt and not new lf prompt
+
+        # Dict prompt - build and compare config
+        prompt_config = PromptConfig(
+            args=PromptArgs(**prompt_data["args"]),
+            project=self._overlord.project,
+        )
+
+        placeholders = prompt_data.get("placeholders")
+        if placeholders:
+            prompt_config.placeholders = placeholders
 
         if prompt_config != self._active_lf_prompt_config:
             self._active_lf_prompt_config = prompt_config
-            return True
-        return False
+            return True  # is new lf prompt
+        return False  # is lf prompt but not new
+
+    def _call_tool(self, tool_call) -> dict:
+        tool_function = tool_call["function"]
+        function_name = tool_function["name"]
+
+        if function_name not in self.tools:
+            raise OverlordClientError(f"Tool '{function_name}' not in available tools '{', '.join(self.tools)}'")
+
+        function_to_call = self.tools[function_name]
+        function_args = json.loads(tool_function["arguments"])
+        response = function_to_call(**function_args)
+
+        return dict(
+            tool_call_id=tool_call["id"],
+            role="tool",
+            name=function_name,
+            content=response if isinstance(response, str) else json.dumps(response),
+        )
 
     def _handle_tool_calls(self, tool_calls):
         if tool_calls:
@@ -205,24 +230,8 @@ class _Chat:
                 raise OverlordClientError("No tools to call were provided!")
 
             for tool_call in tool_calls:
-                tool_function = tool_call["function"]
-                function_name = tool_function["name"]
-
-                if function_name not in self.tools:
-                    raise OverlordClientError(f"Tool '{function_name}' not in available tools '{', '.join(self.tools)}'")
-
-                function_to_call = self.tools[function_name]
-                function_args = json.loads(tool_function["arguments"])
-                function_response = function_to_call(**function_args)
-
-                self._message_history.append(
-                    dict(
-                        tool_call_id=tool_call["id"],
-                        role="tool",
-                        name=function_name,
-                        content=function_response if isinstance(function_response, str) else json.dumps(function_response),
-                    )
-                )
+                tool_response_message = self._call_tool(tool_call)
+                self._message_history.append(tool_response_message)
 
             # automatically call itself again with the response of the tools using internal active config
             return self.request(ChatInput(prompt=None))
@@ -234,13 +243,9 @@ class _Chat:
         custom_metadata = input_data.metadata
         self.tools = input_data.tools or self.tools
 
-        is_new_lf_prompt = False
-        if isinstance(prompt_data, dict):
-            is_new_lf_prompt = self._handle_lf_prompt_config(prompt_data)
-        elif not self._active_lf_prompt_config:
-            raise OverlordClientError("A chat must be initialized with a Langfuse prompt config!")
+        is_new_lf_prompt = self._handle_prompt_config(prompt_data)
 
-        chat_request = ChatRequest(
+        return ChatRequest(
             lf_prompt_config=self._active_lf_prompt_config or self._initial_lf_prompt_config,
             is_new_lf_prompt=is_new_lf_prompt,
             text_prompt=None if isinstance(prompt_data, dict) else prompt_data,
@@ -249,8 +254,6 @@ class _Chat:
             output_schema=self._initial_response_schema,
             metadata=dict(session_id=self.session_id, **(dict(custom=custom_metadata) if custom_metadata else {})),
         )
-
-        return chat_request
 
     def _execute_request(self, request_data):
         try:
@@ -274,7 +277,7 @@ class _Chat:
         return loads_if_json(reply)
 
     # public interface
-    def request(self, input_data: ChatInput):
+    def request(self, input_data: ChatInput) -> str | list | dict:
         chat_request = self._prepare_request(input_data)
         response = self._execute_request(chat_request)
         return self._handle_response(response)
@@ -316,10 +319,10 @@ class Overlord:
         self.input = ChatInput
         self.project = project
 
-    def chat(self):
+    def chat(self) -> _Chat:
         return _Chat(self)
 
-    def task(self, data):
+    def task(self, data: ChatInput) -> str | list | dict:
         chat = self.chat()
         chat.session_id = None
         return chat.request(data)
