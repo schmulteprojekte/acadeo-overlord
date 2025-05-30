@@ -4,52 +4,79 @@ import time
 from collections import defaultdict
 
 
-def setup(app: FastAPI, rate_configs: dict[str, list[str]]):
-    """
-    Setup rate limiting based on x-client-type header.
+class RateLimiter:
+    """Rate limiter with different limits per client type."""
 
-    Example: {"default": ["1/second"], "high-usage": ["10/second"]}
-    """
-
-    time_units = dict(
+    TIME_UNITS = dict(
         second=1,
         minute=60,
         hour=3600,
         day=86400,
     )
 
-    request_history = defaultdict(list)
+    def __init__(self, rate_configs: dict[str, list[str]]):
+        self.configs = self._parse_configs(rate_configs)
+        self.history = defaultdict(list)
 
-    def _is_rate_limit_exceeded(key: str, max_requests: int, window: int, now: float) -> bool:
-        "Remove old timestamps and check if limit exceeded."
+    def _parse_configs(self, rate_configs: dict) -> dict:
+        """Validate and pre-parse rate limit strings."""
 
-        request_history[key] = [t for t in request_history[key] if t > (now - window)]
-        return len(request_history[key]) >= max_requests
+        parsed = {}
 
-    def _cleanup_history_if_needed(key: str, max_requests: int) -> None:
-        "Prevent memory leak by limiting history size."
+        for client_type, limits in rate_configs.items():
+            parsed[client_type] = []
 
-        if len(request_history[key]) > max_requests * 2:
-            request_history[key] = request_history[key][-max_requests:]
+            for limit in limits:
+                try:
+                    count, unit = limit.split("/")
+                    count = int(count)
+
+                    if unit not in self.TIME_UNITS:
+                        raise ValueError(f"Unknown time unit: {unit}")
+
+                    window = self.TIME_UNITS[unit]
+                    parsed[client_type].append((count, window, limit))
+
+                except Exception as e:
+                    raise ValueError(f"Invalid rate limit format '{limit}': {e}")
+
+        return parsed
+
+    def check_request(self, ip: str, client_type: str) -> str | None:
+        """Check if request should be rate limited. Returns limit string if exceeded."""
+
+        limits = self.configs.get(client_type, self.configs.get("default", []))
+        now = time.time()
+
+        for max_requests, window, limit_str in limits:
+            key = f"{client_type}:{ip}:{limit_str}"
+
+            # Clean old timestamps
+            cutoff = now - window
+            self.history[key] = [t for t in self.history[key] if t > cutoff]
+
+            # Check limit
+            if len(self.history[key]) >= max_requests:
+                return limit_str
+
+            # Record request
+            self.history[key].append(now)
+
+            # Prevent memory growth
+            if len(self.history[key]) > max_requests * 2:
+                self.history[key] = self.history[key][-max_requests:]
+
+
+def setup(app: FastAPI, rate_configs: dict[str, list[str]]):
+    """Setup rate limiting middleware."""
+    limiter = RateLimiter(rate_configs)
 
     @app.middleware("http")
     async def rate_limit_middleware(request: Request, call_next):
-        # get client identity
-        ip, client_type = request.client.host or "unknown", request.headers.get("x-client-type", "default")
+        ip = request.client.host or "unknown"
+        client_type = request.headers.get("x-client-type", "default")
 
-        limits = rate_configs.get(client_type, rate_configs["default"])
-        now = time.time()
-
-        # check whether any limit is exceeded
-        for limit in limits:
-            max_requests, unit = limit.split("/")
-            max_requests = int(max_requests)
-            key = f"{client_type}:{ip}:{limit}"
-
-            if _is_rate_limit_exceeded(key, max_requests, time_units[unit], now):
-                return JSONResponse(status_code=429, content={"detail": f"Rate limit exceeded: {limit}"})
-
-            request_history[key].append(now)
-            _cleanup_history_if_needed(key, max_requests)
+        if exceeded_limit := limiter.check_request(ip, client_type):
+            return JSONResponse(status_code=429, content={"detail": f"Rate limit exceeded: {exceeded_limit}"})
 
         return await call_next(request)
