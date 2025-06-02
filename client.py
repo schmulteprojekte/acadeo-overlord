@@ -47,11 +47,17 @@ class _Client:
     ```
     """
 
-    def __init__(self, server: str, api_key: str):
+    def __init__(self, server: str, api_key: str, client_type: str):
+        if not server:
+            raise OverlordClientError("No server url specified!")
+        if not api_key:
+            raise OverlordClientError("No api key specified!")
+
         self._server = server
         self._session = requests.Session()
 
         self._auth(api_key)
+        self._set_client_type_header(client_type or "default")
 
     # hidden helpers
     def _construct_url(self, endpoint: str = None):
@@ -83,11 +89,12 @@ class _Client:
             yield event_data
 
     def _auth(self, api_key: str):
-        if not self._server:
-            raise OverlordClientError("No server url specified!")
-
         if "x-api-key" not in self._session.headers or self._session.headers["x-api-key"] != api_key:
             self._session.headers.update({"x-api-key": api_key})
+
+    def _set_client_type_header(self, client_type: str):
+        if client_type and "x-client-type" not in self._session.headers or self._session.headers["x-client-type"] != client_type:
+            self._session.headers.update({"x-client-type": client_type})
 
     # public interfaces
     def ping(self) -> requests.Response:
@@ -314,8 +321,8 @@ class Overlord:
     ```
     """
 
-    def __init__(self, server, api_key, project):
-        self.client = _Client(server, api_key)
+    def __init__(self, server, api_key, project, *, client_type: Literal["default", "high-usage"] = None):
+        self.client = _Client(server, api_key, client_type)
         self.input = ChatInput
         self.project = project
 
