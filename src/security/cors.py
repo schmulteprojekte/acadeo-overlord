@@ -8,5 +8,5 @@ def setup(app: FastAPI, allowed_origins: list[str]):
         allow_origins=allowed_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST"],
-        allow_headers=["x-api-key", "content-type"],
+        allow_headers=["x-api-key", "x-client-type", "content-type"],
     )

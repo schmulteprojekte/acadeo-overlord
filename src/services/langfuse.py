@@ -18,7 +18,7 @@ class PromptArgs(BaseModel):
 
 class PromptConfig(BaseModel):
     args: PromptArgs
-    placeholders: dict = {}
+    placeholders: dict | None = None
     project: str
 
 

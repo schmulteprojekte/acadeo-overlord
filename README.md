@@ -34,7 +34,8 @@
 APP_NAME="my-overlord"
 ACCESS_KEYS='["example-secret-key-one", "example-secret-key-two", "example-secret-key-three"]'
 ALLOWED_ORIGINS='["https://www.example.com/"]'
-RATE_LIMITS='["1/second", "10/minute", "100/day"]'
+RATE_LIMITS_DEFAULT='["1/second", "10/minute", "100/hour", "1000/day"]'
+RATE_LIMITS_HIGH='["10/second", "100/minute", "1000/hour", "10000/day"]'  # only needed if high-usage client required
 
 # various langfuse project keys
 LANGFUSE_SECRET_KEY_PROJECT="your-langfuse-secret-key-with-the-project-name"
@@ -82,7 +83,7 @@ Run `pip install requests pydantic`
 from overlordapi import Overlord
 
 
-overlord = Overlord("http://your-server.url", "your-api-key", "your-langfuse-project")
+overlord = Overlord("http://your-server.url", "your-api-key", "your-langfuse-project", client_type="high-usage")  # or "default" client_type
 
 # health check (optional)
 print(overlord.client.ping().text)

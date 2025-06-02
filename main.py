@@ -9,13 +9,16 @@ from src.endpoints import ai, test
 
 app = FastAPI(dependencies=[auth.via_api_key])
 
-app.include_router(ai.router)
-app.include_router(test.router)
 
-
+# setup security middlewares
 cors.setup(app, origins)
 limits.setup(app, rates)
 logging.setup(app, name)
+
+
+# include module routers
+app.include_router(ai.router)
+app.include_router(test.router)
 
 
 @app.get("/")
