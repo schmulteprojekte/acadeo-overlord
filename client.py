@@ -1,5 +1,5 @@
-import requests, json, contextlib, uuid
-from typing import Literal, Generator, Callable
+import httpx, json, contextlib, uuid, asyncio, inspect
+from typing import Literal, Callable, AsyncGenerator
 from pydantic import BaseModel
 
 
@@ -31,7 +31,7 @@ class OverlordClientError(Exception):
 
 class _Client:
     """
-    Request client for the Overlord API.
+    Async request client for the Overlord API using httpx.
 
     ### Usage:
 
@@ -40,10 +40,10 @@ class _Client:
     client = _Client("http://your-server-url", "your-api-key")
 
     # check health
-    print(client.ping().text)
+    print((await client.ping()).text)
 
     # request single event
-    response = next(client.request("endpoint", "POST", data={}))
+    response = await anext(client.request("endpoint", "POST", data={}))
     ```
     """
 
@@ -54,7 +54,7 @@ class _Client:
             raise OverlordClientError("No api key specified!")
 
         self._server = server
-        self._session = requests.Session()
+        self._client = httpx.AsyncClient()
 
         self._auth(api_key)
         self._set_client_type_header(client_type or "default")
@@ -69,54 +69,54 @@ class _Client:
         return ErrorClass(event_data["message"])
 
     @staticmethod
-    def _parse_sse(response) -> Generator:
-        for line in response.iter_lines():
-            if line.startswith(b"event:"):
-                event_type = line.split(b":", 1)[1].strip()
+    async def _parse_sse(response) -> AsyncGenerator:
+        async for line in response.aiter_lines():
+            if line.startswith("event:"):
+                event_type = line.split(":", 1)[1].strip()
                 continue
 
-            if line.startswith(b"data:"):
-                event_data = line.split(b":", 1)[1].strip()
+            if line.startswith("data:"):
+                event_data = line.split(":", 1)[1].strip()
                 try:
-                    yield event_type.decode(), json.loads(event_data)
+                    yield event_type, json.loads(event_data)
                 except json.JSONDecodeError:
                     continue
 
-    def _raise_or_return(self, response):
-        for event_type, event_data in self._parse_sse(response):
+    async def _raise_or_return(self, response):
+        async for event_type, event_data in self._parse_sse(response):
             if event_type == "error":
                 raise self._create_server_error(event_data)
             yield event_data
 
     def _auth(self, api_key: str):
-        if "x-api-key" not in self._session.headers or self._session.headers["x-api-key"] != api_key:
-            self._session.headers.update({"x-api-key": api_key})
+        if "x-api-key" not in self._client.headers or self._client.headers["x-api-key"] != api_key:
+            self._client.headers.update({"x-api-key": api_key})
 
     def _set_client_type_header(self, client_type: str):
-        if client_type and "x-client-type" not in self._session.headers or self._session.headers["x-client-type"] != client_type:
-            self._session.headers.update({"x-client-type": client_type})
+        if client_type and "x-client-type" not in self._client.headers or self._client.headers["x-client-type"] != client_type:
+            self._client.headers.update({"x-client-type": client_type})
 
     # public interfaces
-    def ping(self) -> requests.Response:
-        response = self._session.request("GET", self._construct_url())
+    async def ping(self) -> httpx.Response:
+        response = await self._client.request("GET", self._construct_url())
         response.raise_for_status()
         return response
 
-    def request(
+    async def request(
         self,
         endpoint: str = None,
         method: Literal["GET", "POST"] = "GET",
         data: dict = None,
-    ) -> Generator:
+    ) -> AsyncGenerator:
 
-        with self._session.request(
+        async with self._client.stream(
             method,
             self._construct_url(endpoint),
             json=data,
-            stream=True,
         ) as response:
             response.raise_for_status()
-            yield from self._raise_or_return(response)
+            async for event_data in self._raise_or_return(response):
+                yield event_data
 
 
 # ---
@@ -213,7 +213,7 @@ class _Chat:
             return True  # is new lf prompt
         return False  # is lf prompt but not new
 
-    def _call_tool(self, tool_call) -> dict:
+    async def _call_tool(self, tool_call) -> dict:
         tool_function = tool_call["function"]
         function_name = tool_function["name"]
 
@@ -222,7 +222,12 @@ class _Chat:
 
         function_to_call = self.tools[function_name]
         function_args = json.loads(tool_function["arguments"])
-        response = function_to_call(**function_args)
+
+        # Support both sync and async tools
+        if inspect.iscoroutinefunction(function_to_call):
+            response = await function_to_call(**function_args)
+        else:
+            response = function_to_call(**function_args)
 
         return dict(
             tool_call_id=tool_call["id"],
@@ -231,17 +236,20 @@ class _Chat:
             content=response if isinstance(response, str) else json.dumps(response),
         )
 
-    def _handle_tool_calls(self, tool_calls):
+    async def _handle_tool_calls(self, tool_calls):
         if tool_calls:
             if not self.tools:
                 raise OverlordClientError("No tools to call were provided!")
 
-            for tool_call in tool_calls:
-                tool_response_message = self._call_tool(tool_call)
+            # Execute tools concurrently
+            tool_tasks = [self._call_tool(tool_call) for tool_call in tool_calls]
+            tool_responses = await asyncio.gather(*tool_tasks)
+
+            for tool_response_message in tool_responses:
                 self._message_history.append(tool_response_message)
 
             # automatically call itself again with the response of the tools using internal active config
-            return self.request(ChatInput(prompt=None))
+            return await self.request(ChatInput(prompt=None))
 
     # private wrappers
     def _prepare_request(self, input_data: ChatInput):
@@ -262,21 +270,21 @@ class _Chat:
             metadata=dict(session_id=self.session_id, **(dict(custom=custom_metadata) if custom_metadata else {})),
         )
 
-    def _execute_request(self, request_data):
+    async def _execute_request(self, request_data):
         try:
-            return next(self._overlord.client.request(self._endpoint, "POST", request_data.model_dump()))
+            return await anext(self._overlord.client.request(self._endpoint, "POST", request_data.model_dump()))
         except:
             self._active_lf_prompt_config = None  # reset for clean retry
             raise
 
-    def _handle_response(self, response):
+    async def _handle_response(self, response):
         if not self._message_history:
             self._initial_lf_prompt_config = self._active_lf_prompt_config
             self._initial_response_schema = response["schema"]
 
         self._message_history = response["messages"]
 
-        tool_response = self._handle_tool_calls(response["tool_calls"])
+        tool_response = await self._handle_tool_calls(response["tool_calls"])
         if tool_response:
             return tool_response
 
@@ -284,10 +292,10 @@ class _Chat:
         return loads_if_json(reply)
 
     # public interface
-    def request(self, input_data: ChatInput) -> str | list | dict:
+    async def request(self, input_data: ChatInput) -> str | list | dict:
         chat_request = self._prepare_request(input_data)
-        response = self._execute_request(chat_request)
-        return self._handle_response(response)
+        response = await self._execute_request(chat_request)
+        return await self._handle_response(response)
 
 
 # ---
@@ -295,16 +303,16 @@ class _Chat:
 
 class Overlord:
     """
-    Full interface to the Overlord Server.
+    Async-first interface to the Overlord API server.
 
-    ### Usage:
+    ### Async Usage:
 
     ```python
     # init
     overlord = Overlord("http://your-server-url", "your-api-key", "your-langfuse-project")
 
     # health check (optional)
-    print(overlord.client.ping().text)
+    print((await overlord.client.ping()).text)
 
     # 1. runtime persistant chat
     chat = overlord.chat()
@@ -313,11 +321,23 @@ class Overlord:
     print(chat.session_id)
 
     data = overlord.input(...)
-    response = chat.request(data)
+    response = await chat.request(data)
 
     # 2. single request
     data = overlord.input(...)
-    response = overlord.task(data)
+    response = await overlord.task(data)
+    ```
+
+    ### Sync Usage:
+
+    Simply wrap .request() or .task() in asyncio.run() for example:
+
+    ```python
+    import asyncio
+
+    # everything stays the same but then:
+
+    response = asyncio.run(overlord.task(data))
     ```
     """
 
@@ -329,7 +349,7 @@ class Overlord:
     def chat(self) -> _Chat:
         return _Chat(self)
 
-    def task(self, data: ChatInput) -> str | list | dict:
+    async def task(self, data: ChatInput) -> str | list | dict:
         chat = self.chat()
         chat.session_id = None
-        return chat.request(data)
+        return await chat.request(data)
