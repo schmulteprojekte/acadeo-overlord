@@ -9,6 +9,7 @@
 > FastAPI integrating LiteLLM's flexibility with Langfuse's prompt management.
 
 # Table of Contents
+
 - [Server](#🤖-server)
   - [Setup](#setup)
     - [Secrets](#secrets)
@@ -67,6 +68,8 @@ The Overlord API is based on server-sent events (SSE), meaning by simply sending
 
 # 😊 Client
 
+The client is async first meaning if called in a synchronous application `chat.request()` and `overlord.task()` must be wrapped in `asyncio.run()` instead of prefixed with `await`
+
 ## Setup
 
 ### Installation
@@ -86,7 +89,7 @@ from overlordapi import Overlord
 overlord = Overlord("http://your-server.url", "your-api-key", "your-langfuse-project", client_type="high-usage")  # or "default" client_type
 
 # health check (optional)
-print(overlord.client.ping().text)
+print((await overlord.client.ping()).text)
 ```
 
 ### Input
@@ -117,7 +120,7 @@ class PromptArgs(BaseModel):
 
 class PromptConfig(BaseModel):
     args: PromptArgs
-    placeholders: dict = {}  # optional
+    placeholders: dict | None = None  # optional
     project: str  # this is used internally and can be ignored
 ```
 
@@ -150,18 +153,20 @@ data = overlord.input(prompt="What did we just look at?")
 ### Requests
 
 #### Single task
+
 ```python
-response = overlord.task(data)
+response = await overlord.task(data)
 ```
 
 #### Persistent chat
+
 ```python
 chat = overlord.chat()
 
 # check session id (optional)
 print(chat.session_id)
 
-response = chat.request(data)
+response = await chat.request(data)
 ```
 
 ---
@@ -169,6 +174,7 @@ response = chat.request(data)
 #### Tool use
 
 Set when creating Langfuse prompt
+
 ```python
 tools = [
     dict(
@@ -201,7 +207,10 @@ langfuse.create_prompt(
 )
 ```
 
-Provide actual tools to client in call
+Provide actual tools to client in call.
+Tools can be `async` `await` to be called in parallel.
+Also async and sync tools can be mixed.
+
 ```python
 def get_random_words(n: int):
     selection = ["cat", "dog", "horse", "fish", "human"]
@@ -224,7 +233,7 @@ data = overlord.input(
     ),
 )
 
-response = overlord.task(data)
+response = await overlord.task(data)
 ```
 
 ## Notes
