@@ -54,8 +54,7 @@ class _Client:
             raise OverlordClientError("No api key specified!")
 
         self._server = server
-        # Set a longer timeout for AI operations (default is 5 seconds)
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(timeout))
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(timeout or 60))
 
         self._auth(api_key)
         self._set_client_type_header(client_type or "default")
@@ -340,8 +339,16 @@ class Overlord:
     ```
     """
 
-    def __init__(self, server, api_key, project, *, client_type: Literal["default", "high-usage"] = None):
-        self.client = _Client(server, api_key, client_type)
+    def __init__(
+        self,
+        server,
+        api_key,
+        project,
+        *,
+        client_type: Literal["default", "high-usage"] = "default",
+        timeout=60,  # seconds before client requests time out (set higher for longer ai calls)
+    ):
+        self.client = _Client(server, api_key, client_type, timeout)
         self.input = ChatInput
         self.project = project
 
