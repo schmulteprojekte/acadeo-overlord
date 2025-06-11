@@ -313,7 +313,7 @@ class Overlord:
     print((await overlord.client.ping()).text)
 
     # 1. runtime persistant chat
-    chat = overlord.chat()
+    chat = overlord.chat()  # optionally pass an existing message history
 
     # check session id (optional)
     print(chat.session_id)
