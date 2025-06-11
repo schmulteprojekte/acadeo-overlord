@@ -1,6 +1,6 @@
-import httpx, json, contextlib, uuid, asyncio, inspect
 from typing import Literal, Callable, AsyncGenerator
 from pydantic import BaseModel
+import httpx, json, contextlib, uuid, asyncio, inspect
 
 
 def loads_if_json(data):
@@ -170,13 +170,13 @@ class ChatRequest(BaseModel):
 
 
 class _Chat:
-    def __init__(self, overlord):
+    def __init__(self, overlord, existing_message_history: list | None = None):
         self.session_id = f"overlord_{uuid.uuid4()}"
         self._overlord = overlord
         self._endpoint = "ai/chat"
         self.tools = None
         # ---
-        self._message_history = None
+        self._message_history = existing_message_history
         self._initial_lf_prompt_config = None
         self._initial_response_schema = None
         self._active_lf_prompt_config = None
@@ -224,16 +224,14 @@ class _Chat:
         function_args = json.loads(tool_function["arguments"])
 
         # Support both sync and async tools
-        if inspect.iscoroutinefunction(function_to_call):
-            response = await function_to_call(**function_args)
-        else:
-            response = function_to_call(**function_args)
+        is_async_tool = inspect.iscoroutinefunction(function_to_call)
+        tool_response = await function_to_call(**function_args) if is_async_tool else function_to_call(*function_args)
 
         return dict(
             tool_call_id=tool_call["id"],
             role="tool",
             name=function_name,
-            content=response if isinstance(response, str) else json.dumps(response),
+            content=tool_response if isinstance(tool_response, str) else json.dumps(tool_response),
         )
 
     async def _handle_tool_calls(self, tool_calls):
@@ -315,7 +313,7 @@ class Overlord:
     print((await overlord.client.ping()).text)
 
     # 1. runtime persistant chat
-    chat = overlord.chat()
+    chat = overlord.chat()  # optionally pass an existing message history
 
     # check session id (optional)
     print(chat.session_id)
@@ -346,8 +344,8 @@ class Overlord:
         self.input = ChatInput
         self.project = project
 
-    def chat(self) -> _Chat:
-        return _Chat(self)
+    def chat(self, existing_message_history: list | None = None) -> _Chat:
+        return _Chat(self, existing_message_history)
 
     async def task(self, data: ChatInput) -> str | list | dict:
         chat = self.chat()

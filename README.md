@@ -169,6 +169,12 @@ print(chat.session_id)
 response = await chat.request(data)
 ```
 
+Optionally an existing message history can be passed on chat init to allow continuing from a previous point in a conversation.
+
+```python
+chat = overlord.chat(existing_message_history=[dict(role="user", content="My name is Tom.")])
+```
+
 ---
 
 #### Tool use
