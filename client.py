@@ -47,14 +47,15 @@ class _Client:
     ```
     """
 
-    def __init__(self, server: str, api_key: str, client_type: str):
+    def __init__(self, server: str, api_key: str, client_type: str, timeout: int = 60):
         if not server:
             raise OverlordClientError("No server url specified!")
         if not api_key:
             raise OverlordClientError("No api key specified!")
 
         self._server = server
-        self._client = httpx.AsyncClient()
+        # Set a longer timeout for AI operations (default is 5 seconds)
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(timeout))
 
         self._auth(api_key)
         self._set_client_type_header(client_type or "default")
