@@ -1,20 +1,26 @@
 from sse_starlette.sse import EventSourceResponse
 from functools import wraps
+from typing import AsyncGenerator
 import json
+
+
+async def create_event(event_type: str, event_data) -> AsyncGenerator:
+    yield {"event": event_type, "data": json.dumps(event_data)}
 
 
 def endpoint(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        result = await func(*args, **kwargs)
+        try:
+            event_type, event_data = "success", await func(*args, **kwargs)
 
-        async def event_generator():
-            if result is None:
-                yield {"event": "error", "data": "result is None"}
-                return
+            if not event_data:
+                raise ValueError("No event data received")
 
-            yield {"event": "result", "data": json.dumps(result)}
+        except Exception as e:
+            event_type, event_data = "error", dict(type=type(e).__name__, message=str(e))
 
-        return EventSourceResponse(event_generator())
+        response = EventSourceResponse(create_event(event_type, event_data))
+        return response
 
     return wrapper

@@ -1,7 +1,7 @@
 # Custom
 .vscode
-fly.toml
 *.ipynb
+*fly*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

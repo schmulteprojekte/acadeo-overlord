@@ -2,6 +2,12 @@
 # Custom
 **/.vscode
 **/*.ipynb
+*fly*
+**/*.png
+**.md
+**.json
+**.html
+client.py
 
 # Byte-compiled / optimized / DLL files
 **/__pycache__
